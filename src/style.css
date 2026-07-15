@@ -9,11 +9,16 @@
 
 @layer base {
   html {
+    @apply min-h-full bg-black;
     scroll-behavior: smooth;
   }
 
   body {
-    @apply min-w-80 bg-black antialiased;
+    @apply min-h-screen min-w-80 bg-black antialiased;
+  }
+
+  #app {
+    @apply min-h-screen bg-black;
   }
 
   button,
