@@ -30,6 +30,12 @@ Build produkcyjny:
 npm run build
 ```
 
+## GitHub Pages
+
+Workflow `.github/workflows/deploy-pages.yml` automatycznie buduje i publikuje stronę po każdym pushu do gałęzi `main`.
+
+W repozytorium na GitHubie wybierz **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+
 ## Struktura
 
 - `src/App.vue` — główny widok
