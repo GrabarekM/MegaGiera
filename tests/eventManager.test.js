@@ -74,6 +74,6 @@ test('condition and result handlers are extensible without changing EventManager
 test('movement entry points guard against an active event', async () => {
   const { readFile } = await import('node:fs/promises')
   const source = await readFile(new URL('../src/views/MenuThree.vue', import.meta.url), 'utf8')
-  assert.match(source, /function movePlayerTo\(index\) \{\s*if \(eventSnapshot\.value\.movementBlocked\) return/)
-  assert.match(source, /function movePlayerBy\(deltaRow, deltaColumn\) \{\s*if \(eventSnapshot\.value\.movementBlocked\) return/)
+  assert.match(source, /function movePlayerTo\(index\) \{\s*if \(eventSnapshot\.value\.movementBlocked \|\| combatSnapshot\.value\.worldBlocked\) return/)
+  assert.match(source, /function movePlayerBy\(deltaRow, deltaColumn\) \{\s*if \(eventSnapshot\.value\.movementBlocked \|\| combatSnapshot\.value\.worldBlocked\) return/)
 })

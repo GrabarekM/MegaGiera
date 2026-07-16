@@ -9,7 +9,7 @@ export function createRunSeed() {
   return `meadows-${Date.now()}-${randomPart}`
 }
 
-export function createNewRun(characterId, options = {}) {
+export function createNewRun(characterCreation, options = {}) {
   const seed = options.seed ?? createRunSeed()
   const now = options.now?.() ?? new Date().toISOString()
   const runId = options.runId ?? globalThis.crypto?.randomUUID?.() ?? `run-${Date.now()}`
@@ -25,12 +25,12 @@ export function createNewRun(characterId, options = {}) {
   }
   const playerPosition = { row: start.row, column: start.column }
   const poiDiscovery = advancePoiDiscovery(createPoiRecords(map), {}, playerPosition)
-  const characterState = createCharacterState({ id: `character-${runId}`, name: options.characterName ?? 'Hero', characterClass: characterId })
+  const characterState = createCharacterState({ id: `character-${runId}`, ...characterCreation })
   return {
     saveVersion: SAVE_VERSION,
     runId,
     seed,
-    characterId,
+    characterId: 'custom',
     regionId: map.id,
     playerPosition,
     time: createInitialTime(),

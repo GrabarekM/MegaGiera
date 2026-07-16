@@ -5,9 +5,17 @@ import { calculateTileTravelTime } from '../data/travelConfig.js'
 import { STATIC_POI_CONFIG, STATIC_POI_ICONS } from '../data/staticPoiConfig.js'
 import { calculateFollowScroll } from '../utils/camera.js'
 import EventModal from '../components/EventModal.vue'
+import CombatView from '../components/CombatView.vue'
 import { EventManager } from '../engine/events/eventManager.js'
 import { enginePreviewEvent } from '../data/events/enginePreviewEvent.js'
 import { cloneCharacterState, createCharacterState, restoreCharacterState } from '../game/characterState.js'
+import { CombatManager } from '../combat/combatManager.js'
+import { COMBAT_INITIATOR, COMBAT_RESULT } from '../combat/combatConstants.js'
+import { ENEMY_TEMPLATE_LIST, ENEMY_TEMPLATES } from '../data/enemyTemplates.js'
+import { ATTRIBUTE_DEFINITIONS, EQUIPMENT_SLOTS, PROFICIENCY_CATEGORIES, PROFICIENCY_DESCRIPTIONS, PROFICIENCY_NAMES } from '../data/characterCreation.js'
+import { WEAPON_LIST } from '../data/weapons.js'
+import { COMBAT_SKILLS } from '../data/combatSkills.js'
+import { createPanelManager, GAME_PANELS, isTextInputTarget } from '../ui/panelManager.js'
 import {
   advancePoiDiscovery,
   countPoiDiscoveryStates,
@@ -54,6 +62,10 @@ let loadingAnimationFrame = null
 const fogEnabled = ref(true)
 const showTimeActions = ref(false)
 const showDevTools = ref(false)
+const devToolsQuery = ref('')
+const devToolsCategory = ref('all')
+const devToolsMenu = ref(null)
+const visibleDevToolCount = ref(0)
 const showCoordinates = ref(false)
 const showPointsOfInterest = ref(false)
 const showBiomeColors = ref(true)
@@ -76,6 +88,42 @@ const showVillageBounds = ref(false)
 const showRegionZones = ref(false)
 const showStartPosition = ref(false)
 const showBossPosition = ref(false)
+
+const DEV_TOOL_CATEGORY_PATTERNS = Object.freeze({
+  poi: /poi|point of interest|detection|identification|discovery/i,
+  roads: /road|bridge/i,
+  combat: /combat|event/i,
+  world: /settlement|city|village|region|sector|boss|start position|edge zone|density|empty sector/i,
+})
+
+function getDevToolCategory(label) {
+  return Object.entries(DEV_TOOL_CATEGORY_PATTERNS).find(([, pattern]) => pattern.test(label))?.[0] ?? 'map'
+}
+
+async function filterDevTools() {
+  await nextTick()
+  if (!devToolsMenu.value) return
+  const query = devToolsQuery.value.trim().toLocaleLowerCase()
+  const buttons = [...devToolsMenu.value.querySelectorAll(':scope > button')]
+  let visible = 0
+
+  for (const button of buttons) {
+    const label = button.textContent.trim()
+    const matchesQuery = !query || label.toLocaleLowerCase().includes(query)
+    const matchesCategory = devToolsCategory.value === 'all' || getDevToolCategory(label) === devToolsCategory.value
+    button.hidden = !(matchesQuery && matchesCategory)
+    if (!button.hidden) visible += 1
+  }
+
+  const seedTools = devToolsMenu.value.querySelector('.dev-seed')
+  if (seedTools) seedTools.hidden = Boolean(query && !'map seed generate'.includes(query)) || !['all', 'map'].includes(devToolsCategory.value)
+  visibleDevToolCount.value = visible + (seedTools && !seedTools.hidden ? 1 : 0)
+}
+
+async function openDevTools() {
+  showDevTools.value = true
+  await filterDevTools()
+}
 const showSectorGrid = ref(false)
 const showEdgeZone = ref(false)
 const showSectorStats = ref(false)
@@ -103,8 +151,17 @@ const poiDiscovery = reactive({ ...(props.run.poiDiscovery ?? {}) })
 const characterState = reactive(restoreCharacterState(props.run.characterState, createCharacterState({
   id: `character-${props.run.runId}`,
   name: 'Hero',
-  characterClass: props.run.characterId,
 })))
+const panelManager = createPanelManager()
+const activePanel = ref(panelManager.activePanel)
+const unsubscribePanelManager = panelManager.subscribe((panel) => { activePanel.value = panel })
+const selectedEquipmentItem = ref(null)
+const requiredExperience = computed(() => characterState.level * 100)
+const experienceProgress = computed(() => Math.min(100, (characterState.experience / requiredExperience.value) * 100))
+const characterCombatSkills = computed(() => characterState.startingSkills.map((id) => COMBAT_SKILLS[id]).filter(Boolean))
+const equipmentEntries = computed(() => [{ id: 'weapon', name: 'Weapon', item: characterState.startingWeapon }, ...EQUIPMENT_SLOTS.map((slot) => ({ ...slot, item: characterState.equipment[slot.id] }))])
+const equipmentSlotIcon = (slotId) => ({ weapon: '⚔', head: '♟', earrings: '◉', neck: '◇', chest: '▦', gloves: '✦', bracelet: '◌', ringLeft: '◉', ringRight: '◉', belt: '═', legs: 'Ⅱ', feet: '⌁', cloak: '◢', robe: '♜' }[slotId] ?? '□')
+const proficiencyWeaponTypes = (proficiency) => [...new Set(WEAPON_LIST.filter((weapon) => weapon.requiredProficiency === proficiency).map((weapon) => weapon.weaponType))]
 const eventResultMessage = ref('')
 const eventManager = new EventManager({
   getGold: () => characterState.gold,
@@ -120,6 +177,15 @@ const eventManager = new EventManager({
 }, [enginePreviewEvent])
 const eventSnapshot = ref(eventManager.getSnapshot())
 const unsubscribeEventManager = eventManager.subscribe((snapshot) => { eventSnapshot.value = snapshot })
+const combatManager = new CombatManager()
+const combatSnapshot = ref(combatManager.getSnapshot())
+const unsubscribeCombatManager = combatManager.subscribe((snapshot) => { combatSnapshot.value = snapshot })
+const debugDiceRoll = ref(1)
+const debugBlockAmount = ref(5)
+const debugEnemyTemplateId = ref(ENEMY_TEMPLATE_LIST[0].id)
+const selectedEnemyTemplate = computed(() => ENEMY_TEMPLATES[debugEnemyTemplateId.value])
+const showEnemyIntent = ref(true)
+const showEnemyAiDebug = ref(false)
 const moveCount = computed(() => timeState.value.moveCount)
 const currentTimeOfDay = computed(() => getTimeOfDay(timeState.value.hour, timeState.value.minute ?? 0))
 const currentTimeDetails = computed(() => TIME_OF_DAY_DETAILS[currentTimeOfDay.value])
@@ -472,7 +538,7 @@ function updatePoiDiscovery() {
 }
 
 function movePlayerTo(index) {
-  if (eventSnapshot.value.movementBlocked) return
+  if (eventSnapshot.value.movementBlocked || combatSnapshot.value.worldBlocked) return
   if (didDragMap) {
     didDragMap = false
     return
@@ -494,7 +560,7 @@ function movePlayerTo(index) {
 }
 
 function movePlayerBy(deltaRow, deltaColumn) {
-  if (eventSnapshot.value.movementBlocked) return
+  if (eventSnapshot.value.movementBlocked || combatSnapshot.value.worldBlocked) return
   const nextRow = playerPosition.value.row + deltaRow
   const nextColumn = playerPosition.value.column + deltaColumn
 
@@ -519,6 +585,7 @@ function movePlayerBy(deltaRow, deltaColumn) {
 }
 
 function saveProgress() {
+  if (combatSnapshot.value.worldBlocked) return false
   emit('save-state', {
     playerPosition: { ...playerPosition.value },
     time: { ...timeState.value },
@@ -527,22 +594,23 @@ function saveProgress() {
     poiDiscovery: { ...poiDiscovery },
     characterState: cloneCharacterState(characterState),
   })
+  return true
 }
 
 function performWaitHours(hours) {
-  if (eventSnapshot.value.movementBlocked) return
+  if (eventSnapshot.value.movementBlocked || combatSnapshot.value.worldBlocked) return
   timeState.value = waitHours(timeState.value, hours)
   saveProgress()
 }
 
 function performWaitUntil(period) {
-  if (eventSnapshot.value.movementBlocked) return
+  if (eventSnapshot.value.movementBlocked || combatSnapshot.value.worldBlocked) return
   timeState.value = waitUntilTimeOfDay(timeState.value, period)
   saveProgress()
 }
 
 function performRest() {
-  if (eventSnapshot.value.movementBlocked) return
+  if (eventSnapshot.value.movementBlocked || combatSnapshot.value.worldBlocked) return
   timeState.value = restHours(timeState.value, 6)
   saveProgress()
 }
@@ -561,8 +629,81 @@ function closeActiveEvent() {
   eventManager.closeEvent()
 }
 
+function startTestCombat(initiator = COMBAT_INITIATOR.PLAYER, fullHealth = false, enemyTemplateId = debugEnemyTemplateId.value) {
+  if (eventSnapshot.value.movementBlocked) return
+  const combatCharacter = cloneCharacterState(characterState)
+  if (fullHealth) combatCharacter.health.current = combatCharacter.health.max
+  const started = combatManager.startCombat({
+    character: combatCharacter,
+    enemyTemplateId,
+    initiator,
+    source: { type: 'developer', id: 'test-combat' },
+  })
+  if (started.ok) showDevTools.value = false
+  return started
+}
+
+function selectCombatInitiative(attribute) {
+  return combatManager.selectInitiativeAttribute(attribute)
+}
+
+function selectCombatSkill(skillId) {
+  const selected = combatManager.selectPlayerSkill(skillId)
+  if (!selected.ok) return selected
+  const enemy = combatManager.resolveEnemySelection()
+  if (!enemy.ok) return enemy
+  const initiative = combatManager.resolveInitiative()
+  if (!initiative.ok) return initiative
+  const actions = combatManager.resolveActions()
+  if (!actions.ok) return actions
+  if (actions.combatEnded) return actions
+  return combatManager.endRound()
+}
+
+function finishTestCombat(result) {
+  const completed = combatManager.finishCombat(result)
+  if (completed.ok) {
+    characterState.health.current = completed.combat.player.currentHealth
+    saveProgress()
+  }
+}
+
+function returnToMainMenuAfterDefeat() {
+  const completed = combatManager.finishCombat(COMBAT_RESULT.DEFEAT)
+  if (!completed.ok) return completed
+  characterState.health.current = completed.combat.player.currentHealth
+  saveProgress()
+  emit('main-menu')
+  return completed
+}
+
+function cancelTestCombat() {
+  const completed = combatManager.cancelCombat()
+  if (completed.ok) {
+    characterState.health.current = completed.combat.player.currentHealth
+    saveProgress()
+  }
+}
+
+function setDiceDebugMode(mode) {
+  combatManager.diceService.setMode(mode)
+}
+
+function setFixedDiceRoll() {
+  const roll = Math.max(1, Math.trunc(Number(debugDiceRoll.value) || 1))
+  debugDiceRoll.value = roll
+  combatManager.diceService.setFixedRoll(roll)
+}
+
+function setDebugBlock(value) {
+  return combatManager.setPlayerBlock(value)
+}
+
 function handleMovementKey(event) {
   if (showMapIntro.value) return
+  if (isTextInputTarget(event.target)) return
+  if (panelManager.handleKey(event)) { event.preventDefault(); return }
+  if (activePanel.value) return
 
   const movement = {
     w: [-1, 0],
@@ -624,6 +765,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   saveProgress()
   unsubscribeEventManager()
+  unsubscribeCombatManager()
+  unsubscribePanelManager()
   if (loadingAnimationFrame) cancelAnimationFrame(loadingAnimationFrame)
   if (viewportAnimationFrame) cancelAnimationFrame(viewportAnimationFrame)
   window.removeEventListener('keydown', handleMovementKey)
@@ -639,7 +782,6 @@ onBeforeUnmount(() => {
         <div>
           <p class="panel-caption">Player</p>
           <h1 class="player-class">{{ characterState.name }}</h1>
-          <p>{{ characterState.class }}</p>
         </div>
       </header>
 
@@ -672,19 +814,37 @@ onBeforeUnmount(() => {
             <span>{{ characterState.health.current }} / {{ characterState.health.max }}</span>
           </div>
           <div class="resource-track">
-            <div class="resource-fill resource-fill--health"></div>
+            <div class="resource-fill resource-fill--health" :style="{ width: `${(characterState.health.current / characterState.health.max) * 100}%` }"></div>
           </div>
         </div>
-
+        <div>
+          <div class="resource-label"><span>XP</span><span>{{ characterState.experience }} / {{ requiredExperience }}</span></div>
+          <div class="resource-track"><div class="resource-fill resource-fill--xp" :style="{ width: `${experienceProgress}%` }"></div></div>
+        </div>
+        <div class="hud-weapon">🗡 {{ characterState.startingWeapon?.displayName ?? 'Unarmed' }}</div>
       </section>
 
-      <section class="stats-section" aria-labelledby="stats-heading">
+      <section v-if="false" class="stats-section" aria-labelledby="stats-heading">
         <h2 id="stats-heading" class="section-title">Stats</h2>
         <dl class="stats-list">
           <div class="stat-row"><dt>Might</dt><dd>{{ characterState.stats.might }}</dd></div>
+          <div class="stat-row"><dt>Defense</dt><dd>{{ characterState.stats.defense }}</dd></div>
+          <div class="stat-row"><dt>Vitality</dt><dd>{{ characterState.stats.vitality }}</dd></div>
           <div class="stat-row"><dt>Agility</dt><dd>{{ characterState.stats.agility }}</dd></div>
-          <div class="stat-row"><dt>Wits</dt><dd>{{ characterState.stats.wits }}</dd></div>
-          <div class="stat-row"><dt>Will</dt><dd>{{ characterState.stats.will }}</dd></div>
+          <div class="stat-row"><dt>Magic Power</dt><dd>{{ characterState.stats.magicPower }}</dd></div>
+          <div class="stat-row"><dt>Wisdom</dt><dd>{{ characterState.stats.wisdom }}</dd></div>
+          <div class="stat-row"><dt>Perception</dt><dd>{{ characterState.stats.perception }}</dd></div>
+          <div class="stat-row"><dt>Luck</dt><dd>{{ characterState.stats.luck }}</dd></div>
+        </dl>
+      </section>
+
+      <section v-if="false" class="stats-section" aria-labelledby="proficiencies-heading">
+        <h2 id="proficiencies-heading" class="section-title">Proficiencies</h2>
+        <dl class="stats-list proficiency-list">
+          <div v-for="proficiency in PROFICIENCY_NAMES" :key="proficiency" class="stat-row">
+            <dt>{{ proficiency }}<small>{{ PROFICIENCY_DESCRIPTIONS[proficiency] ?? 'A general adventuring proficiency.' }}</small><small>Weapons: {{ proficiencyWeaponTypes(proficiency).join(', ') || 'None' }}</small></dt>
+            <dd>{{ characterState.proficiencies[proficiency] }}</dd>
+          </div>
         </dl>
       </section>
 
@@ -693,12 +853,65 @@ onBeforeUnmount(() => {
           type="button"
           class="dev-controls__toggle"
           :aria-expanded="showDevTools"
-          @click="showDevTools = !showDevTools"
+          aria-controls="dev-tools-window"
+          @click="openDevTools"
         >
           <span>Dev Tools</span>
-          <span aria-hidden="true">{{ showDevTools ? '−' : '+' }}</span>
+          <span aria-hidden="true">⚙</span>
         </button>
-        <div v-if="showDevTools" class="dev-controls__menu">
+        <Teleport to="body">
+          <div v-if="showDevTools" class="dev-tools-backdrop" @click.self="showDevTools = false">
+            <section
+              id="dev-tools-window"
+              class="dev-tools-window"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="dev-tools-title"
+            >
+              <header class="dev-tools-window__header">
+                <div>
+                  <small>Developer</small>
+                  <h2 id="dev-tools-title">Dev Tools</h2>
+                </div>
+                <button
+                  type="button"
+                  class="dev-tools-window__close"
+                  aria-label="Close developer tools"
+                  @click="showDevTools = false"
+                >
+                  ×
+                </button>
+              </header>
+              <div class="dev-tools-filter">
+                <label>
+                  <span>Search</span>
+                  <input
+                    v-model="devToolsQuery"
+                    type="search"
+                    placeholder="Search tools..."
+                    @input="filterDevTools"
+                  />
+                </label>
+                <label>
+                  <span>Category</span>
+                  <select v-model="devToolsCategory" @change="filterDevTools">
+                    <option value="all">All tools</option>
+                    <option value="map">Map &amp; visibility</option>
+                    <option value="poi">Points of interest</option>
+                    <option value="roads">Roads &amp; bridges</option>
+                    <option value="world">World generation</option>
+                    <option value="combat">Combat &amp; events</option>
+                  </select>
+                </label>
+                <span class="dev-tools-filter__count">{{ visibleDevToolCount }} results</span>
+                <button
+                  v-if="devToolsQuery || devToolsCategory !== 'all'"
+                  type="button"
+                  class="dev-tools-filter__clear"
+                  @click="devToolsQuery = ''; devToolsCategory = 'all'; filterDevTools()"
+                >Clear filters</button>
+              </div>
+              <div ref="devToolsMenu" class="dev-controls__menu">
         <small>Map Size: {{ meadowsMap.columns }} × {{ meadowsMap.rows }}</small>
         <div class="dev-seed">
           <input v-model="currentSeed" type="text" aria-label="Map seed" placeholder="Map seed" />
@@ -738,6 +951,35 @@ onBeforeUnmount(() => {
         <button type="button" @click="showPoiIdentificationRanges = !showPoiIdentificationRanges">POI Identification Ranges: {{ showPoiIdentificationRanges ? 'On' : 'Off' }}</button>
         <button type="button" @click="showPoiDiscoveryStates = !showPoiDiscoveryStates">POI Discovery States: {{ showPoiDiscoveryStates ? 'On' : 'Off' }}</button>
         <button type="button" @click="triggerPreviewEvent">Trigger Sample Event</button>
+        <div class="dev-enemy-picker">
+          <select v-model="debugEnemyTemplateId" aria-label="Test combat enemy">
+            <option v-for="enemy in ENEMY_TEMPLATE_LIST" :key="enemy.id" :value="enemy.id">{{ enemy.name }}</option>
+          </select>
+          <div v-if="selectedEnemyTemplate" class="terrain-stats">
+            <strong>{{ selectedEnemyTemplate.name }} · HP {{ selectedEnemyTemplate.maxHealth }}</strong>
+            <span v-for="(value, stat) in selectedEnemyTemplate.stats" :key="stat">{{ stat }}: {{ value }}</span>
+            <span>Preferred initiative: {{ selectedEnemyTemplate.preferredInitiativeStats.join(', ') }}</span>
+            <span>Skills: {{ selectedEnemyTemplate.skillIds.map((id) => combatManager.skillCatalog[id].name).join(', ') }}</span>
+          </div>
+        </div>
+        <button type="button" :disabled="combatSnapshot.worldBlocked" @click="startTestCombat(COMBAT_INITIATOR.PLAYER)">Combat: Player Initiates</button>
+        <button type="button" :disabled="combatSnapshot.worldBlocked" @click="startTestCombat(COMBAT_INITIATOR.ENEMY)">Combat: Enemy Initiates</button>
+        <button type="button" :disabled="combatSnapshot.worldBlocked" @click="startTestCombat(COMBAT_INITIATOR.PLAYER, true)">Combat: Full HP</button>
+        <button type="button" @click="setDiceDebugMode('minimum')">Dice: Force Minimum</button>
+        <button type="button" @click="setDiceDebugMode('maximum')">Dice: Force Maximum</button>
+        <button type="button" @click="setDiceDebugMode('random')">Dice: Random</button>
+        <button type="button" @click="showEnemyIntent = !showEnemyIntent">Enemy Intent: {{ showEnemyIntent ? 'On' : 'Off' }}</button>
+        <button type="button" @click="showEnemyAiDebug = !showEnemyAiDebug">Enemy AI Debug: {{ showEnemyAiDebug ? 'On' : 'Off' }}</button>
+        <button type="button" :disabled="!combatSnapshot.worldBlocked" @click="setDebugBlock(0)">Block: Clear</button>
+        <button type="button" :disabled="!combatSnapshot.worldBlocked" @click="setDebugBlock((combatSnapshot.activeCombat?.player.stats.defense ?? 0) + 4)">Block: Maximum Guard</button>
+        <div class="dev-seed">
+          <input v-model.number="debugDiceRoll" type="number" min="1" max="20" aria-label="Fixed dice roll" />
+          <button type="button" @click="setFixedDiceRoll">Set Roll</button>
+        </div>
+        <div class="dev-seed">
+          <input v-model.number="debugBlockAmount" type="number" min="0" aria-label="Player Block amount" />
+          <button type="button" :disabled="!combatSnapshot.worldBlocked" @click="setDebugBlock(debugBlockAmount)">Set Block</button>
+        </div>
         <button type="button" @click="showSettlementInfluence = !showSettlementInfluence">Settlement Influence: {{ showSettlementInfluence ? 'On' : 'Off' }}</button>
         <button type="button" @click="showRoadConnections = !showRoadConnections">Road Connections: {{ showRoadConnections ? 'On' : 'Off' }}</button>
         <button type="button" @click="showBridges = !showBridges">Bridges: {{ showBridges ? 'On' : 'Off' }}</button>
@@ -788,7 +1030,10 @@ onBeforeUnmount(() => {
             {{ formatPoiType(poi.type) }} · {{ poiDiscovery[poi.id] ?? POI_DISCOVERY_STATE.HIDDEN }} · D{{ poi.detectionRange }}/I{{ poi.identificationRange }}
           </span>
         </div>
-        </div>
+              </div>
+            </section>
+          </div>
+        </Teleport>
       </section>
     </aside>
 
@@ -798,6 +1043,7 @@ onBeforeUnmount(() => {
           <div>
             <p class="map-eyebrow">Map 1</p>
             <h2>{{ meadowsMap.name }}</h2>
+            <small>{{ characterState.name }} · {{ characterState.gold }} Gold</small>
           </div>
           <div class="world-clock" aria-label="World time">
             <strong>Day {{ timeState.day }}</strong>
@@ -926,6 +1172,41 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
+    <nav class="hud-action-bar" aria-label="Game panels">
+      <button v-for="panel in GAME_PANELS" :key="panel.id" type="button" :class="{ active: activePanel === panel.id }" :title="`${panel.label} — ${panel.tooltip}${panel.shortcut ? ` — Shortcut: ${panel.shortcut.toUpperCase()}` : ''}`" @click="panelManager.toggle(panel.id)">
+        <kbd v-if="panel.shortcut">{{ panel.shortcut.toUpperCase() }}</kbd><span>{{ panel.label }}</span>
+      </button>
+    </nav>
+
+    <Transition name="hud-panel">
+      <div v-if="activePanel" class="hud-panel-backdrop" @click.self="panelManager.close()">
+        <section class="hud-panel" role="dialog" aria-modal="true" :aria-labelledby="`${activePanel}-panel-title`">
+          <header><div><small>Game Menu</small><h2 :id="`${activePanel}-panel-title`">{{ GAME_PANELS.find(({ id }) => id === activePanel)?.label }}</h2></div><button type="button" aria-label="Close panel" @click="panelManager.close()">×</button></header>
+
+          <div v-if="activePanel === 'character'" class="hud-panel__content character-sheet">
+            <section><h3>General</h3><p>{{ characterState.name }}</p><p>Level {{ characterState.level }} · {{ characterState.experience }} / {{ requiredExperience }} XP</p><p>{{ characterState.gold }} Gold</p></section>
+            <section><h3>Combat</h3><p>HP {{ characterState.health.current }} / {{ characterState.health.max }}</p><p>Weapon: {{ characterState.startingWeapon?.displayName ?? 'Unarmed' }}</p></section>
+            <section><h3>Attributes</h3><dl><div v-for="attribute in ATTRIBUTE_DEFINITIONS" :key="attribute.id"><dt>{{ attribute.name }}</dt><dd>{{ characterState.stats[attribute.id] }}</dd></div></dl></section>
+            <section><h3>Proficiencies</h3><dl><div v-for="proficiency in PROFICIENCY_NAMES" :key="proficiency"><dt>{{ proficiency }}</dt><dd>{{ characterState.proficiencies[proficiency] }}</dd></div></dl></section>
+            <section class="equipment-summary"><h3>Equipment Summary</h3><div class="equipment-summary__list"><span v-for="entry in equipmentEntries" :key="entry.id"><b>{{ entry.name }}</b>{{ entry.item?.displayName ?? 'Empty' }}</span></div></section>
+          </div>
+
+          <div v-else-if="activePanel === 'skills'" class="hud-panel__content panel-columns">
+            <section><h3>Combat Skills</h3><article v-for="skill in characterCombatSkills" :key="skill.id"><strong>{{ skill.name }}</strong><p>{{ skill.description }}</p></article></section>
+            <section><h3>Proficiencies</h3><details v-for="category in PROFICIENCY_CATEGORIES" :key="category.id" class="proficiency-category"><summary><strong>{{ category.name }}</strong><span>{{ category.proficiencies.length }}</span></summary><article v-for="proficiency in category.proficiencies" :key="proficiency"><strong>{{ proficiency }} · {{ characterState.proficiencies[proficiency] }}</strong><p>{{ PROFICIENCY_DESCRIPTIONS[proficiency] ?? 'A general adventuring proficiency.' }}</p></article></details></section>
+          </div>
+
+          <div v-else-if="activePanel === 'equipment'" class="hud-panel__content panel-columns">
+            <section><h3>Equipment</h3><div class="equipment-grid"><button v-for="entry in equipmentEntries" :key="entry.id" type="button" class="equipment-slot" :class="{ filled: entry.item, selected: selectedEquipmentItem === entry.item && entry.item }" @click="selectedEquipmentItem = entry.item"><span class="equipment-slot__image"><img v-if="entry.item?.icon" :src="entry.item.icon" :alt="entry.item.displayName"><i v-else aria-hidden="true">{{ equipmentSlotIcon(entry.id) }}</i></span><strong>{{ entry.name }}</strong><small>{{ entry.item?.displayName ?? 'Empty' }}</small></button></div></section>
+            <section class="item-details"><h3>Item Details</h3><template v-if="selectedEquipmentItem"><h4>{{ selectedEquipmentItem.displayName }}</h4><p>{{ selectedEquipmentItem.description }}</p><dl><div><dt>Required Attribute</dt><dd>{{ selectedEquipmentItem.requiredAttribute }} {{ selectedEquipmentItem.requiredAttributeValue }} (Current {{ characterState.stats[selectedEquipmentItem.requiredAttribute] }})</dd></div><div><dt>Required Proficiency</dt><dd>{{ selectedEquipmentItem.requiredProficiency }} · {{ characterState.proficiencies[selectedEquipmentItem.requiredProficiency] }}</dd></div><div><dt>Damage</dt><dd>{{ selectedEquipmentItem.baseDamage }}</dd></div><div><dt>Value</dt><dd>{{ selectedEquipmentItem.value }} Gold</dd></div></dl></template><p v-else>Select an equipped item to inspect it.</p></section>
+          </div>
+
+          <div v-else-if="activePanel === 'journal'" class="hud-panel__content"><section><h3>Journal</h3><p>No journal entries yet.</p></section></div>
+          <div v-else class="hud-panel__content"><section><h3>Settings</h3><p>Settings controls will be added here later.</p></section></div>
+        </section>
+      </div>
+    </Transition>
+
     <div v-if="eventResultMessage && !eventSnapshot.activeEvent" class="event-result-message" role="status">
       {{ eventResultMessage }} · Gold: {{ characterState.gold }}
       <button type="button" aria-label="Dismiss event message" @click="eventResultMessage = ''">×</button>
@@ -938,6 +1219,19 @@ onBeforeUnmount(() => {
       :message="eventSnapshot.lastMessage"
       @choose="chooseEventOption"
       @close="closeActiveEvent"
+    />
+
+    <CombatView
+      v-if="combatSnapshot.activeCombat"
+      :combat="combatSnapshot.activeCombat"
+      :show-enemy-intent="showEnemyIntent"
+      :show-enemy-ai-debug="showEnemyAiDebug"
+      @select-initiative="selectCombatInitiative"
+      @select-skill="selectCombatSkill"
+      @set-block="setDebugBlock"
+      @victory="finishTestCombat(COMBAT_RESULT.VICTORY)"
+      @return-main-menu="returnToMainMenuAfterDefeat"
+      @cancel="cancelTestCombat"
     />
 
     <div
@@ -1078,20 +1372,128 @@ onBeforeUnmount(() => {
   right: 1rem;
   bottom: 1rem;
   left: 1rem;
+  z-index: 5;
+}
+
+.dev-tools-backdrop {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
   display: grid;
-  gap: 0.45rem;
-  padding: 0.75rem;
-  border: 1px dashed #64748b;
-  border-radius: 0.75rem;
-  background: rgb(2 6 23 / 72%);
-  max-height: 48vh;
-  overflow-y: auto;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(2 6 23 / 78%);
+  backdrop-filter: blur(4px);
+}
+
+.dev-tools-window {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  width: min(58rem, calc(100vw - 2rem));
+  max-height: min(48rem, calc(100vh - 2rem));
+  overflow: hidden;
+  border: 1px solid #64748b;
+  border-radius: 0.9rem;
+  background: #0b1220;
+  box-shadow: 0 1.5rem 5rem rgb(0 0 0 / 55%);
+}
+
+.dev-tools-window__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid #334155;
+  background: #111827;
+}
+
+.dev-tools-window__header small {
+  color: #94a3b8;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.dev-tools-window__header h2 {
+  margin: 0.1rem 0 0;
+  color: #f8fafc;
+  font-size: 1.15rem;
+}
+
+.dev-tools-filter {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) minmax(11rem, 0.65fr) auto auto;
+  align-items: end;
+  gap: 0.65rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #334155;
+  background: #0f172a;
+}
+
+.dev-tools-filter label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.dev-tools-filter label > span {
+  color: #94a3b8;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.dev-tools-filter input,
+.dev-tools-filter select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid #475569;
+  border-radius: 0.4rem;
+  outline: none;
+  background: #020617;
+  color: #f8fafc;
+  font-size: 0.75rem;
+}
+
+.dev-tools-filter input:focus,
+.dev-tools-filter select:focus {
+  border-color: #818cf8;
+  box-shadow: 0 0 0 2px rgb(99 102 241 / 20%);
+}
+
+.dev-tools-filter__count {
+  padding-bottom: 0.55rem;
+  color: #94a3b8;
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.dev-tools-window .dev-tools-filter__clear {
+  white-space: nowrap;
+}
+
+.dev-controls__menu > button[hidden],
+.dev-controls__menu > .dev-seed[hidden] {
+  display: none;
 }
 
 .dev-controls__menu {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  align-content: start;
   gap: 0.45rem;
-  padding-top: 0.3rem;
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+.dev-controls__menu > small,
+.dev-controls__menu > .dev-seed,
+.dev-controls__menu > .dev-enemy-picker,
+.dev-controls__menu > .terrain-stats {
+  grid-column: 1 / -1;
 }
 
 .dev-controls__menu > small {
@@ -1116,6 +1518,11 @@ onBeforeUnmount(() => {
   font-size: 0.7rem;
 }
 
+.dev-enemy-picker { display: grid; grid-template-columns: minmax(12rem, 0.6fr) minmax(18rem, 1.4fr); gap: 0.5rem; }
+.dev-enemy-picker select { min-width: 0; padding: 0.5rem; border: 1px solid #64748b; border-radius: 0.35rem; background: #020617; color: #f8fafc; }
+.dev-enemy-picker .terrain-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.dev-enemy-picker .terrain-stats strong { grid-column: 1 / -1; }
+
 .terrain-stats {
   display: grid;
   gap: 0.2rem;
@@ -1126,7 +1533,8 @@ onBeforeUnmount(() => {
   font-size: 0.65rem;
 }
 
-.dev-controls button {
+.dev-controls button,
+.dev-tools-window button {
   padding: 0.45rem 0.65rem;
   border: 1px solid #64748b;
   border-radius: 0.4rem;
@@ -1147,14 +1555,37 @@ onBeforeUnmount(() => {
   text-transform: uppercase;
 }
 
-.dev-controls button:hover {
+.dev-controls button:hover,
+.dev-tools-window button:hover {
   border-color: #a5b4fc;
   background: #334155;
 }
 
-.dev-controls .dev-controls__reset {
+.dev-tools-window .dev-controls__reset {
   border-color: #7f1d1d;
   color: #fecaca;
+}
+
+.dev-tools-window .dev-tools-window__close {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  padding: 0;
+  border-color: #475569;
+  font-size: 1.35rem;
+  line-height: 1;
+  text-align: center;
+}
+
+.game-screen{display:block;min-height:100vh;overflow:hidden}.player-panel{position:fixed;z-index:40;top:5.5rem;left:1rem;width:min(15rem,calc(100vw - 2rem));max-height:calc(100vh - 12rem);overflow:auto;padding:1rem;border:1px solid #64748b;border-radius:.75rem;background:rgb(15 23 42 / 92%);backdrop-filter:blur(8px);box-shadow:0 1rem 3rem #0009}.player-panel .game-navigation,.player-panel .time-actions{display:none}.player-header{padding-bottom:.75rem}.player-icon{width:2.7rem;height:2.7rem;font-size:1.4rem}.resource-section{gap:.7rem;margin-top:.9rem}.resource-fill--xp{background:linear-gradient(90deg,#92400e,#fbbf24)}.hud-weapon{padding:.55rem;border:1px solid #475569;border-radius:.4rem;background:#020617;font-weight:800}.dev-controls{position:static;margin-top:1rem}.map-section{min-height:100vh;padding:.5rem}.map-frame{height:calc(100vh - 1rem)}.map-header{padding-left:17rem}.hud-action-bar{position:fixed;z-index:80;right:50%;bottom:1rem;display:flex;gap:.45rem;padding:.5rem;border:1px solid #64748b;border-radius:.7rem;background:rgb(2 6 23 / 94%);box-shadow:0 .8rem 2rem #000;transform:translateX(50%);backdrop-filter:blur(8px)}.hud-action-bar button{display:flex;align-items:center;gap:.4rem;padding:.5rem .7rem;border:1px solid #475569;border-radius:.4rem;background:#111827;color:#e2e8f0;cursor:pointer}.hud-action-bar button.active{border-color:#fbbf24;background:#78350f;color:#fff}.hud-action-bar kbd{display:grid;min-width:1.7rem;height:1.7rem;place-items:center;border:1px solid #94a3b8;border-radius:.25rem;background:#020617;font-weight:900}.hud-panel-backdrop{position:fixed;z-index:70;inset:0;display:grid;place-items:center;padding:4rem 1rem 6rem;background:rgb(2 6 23 / 38%);backdrop-filter:blur(2px)}.hud-panel{width:min(58rem,100%);max-height:100%;overflow:hidden;border:1px solid #64748b;border-radius:.8rem;background:rgb(11 18 32 / 97%);box-shadow:0 2rem 5rem #000}.hud-panel>header{display:flex;align-items:center;justify-content:space-between;padding:1rem 1.2rem;border-bottom:1px solid #334155;background:#111827}.hud-panel>header small{color:#a5b4fc;text-transform:uppercase}.hud-panel>header h2{font-size:1.5rem;font-weight:900}.hud-panel>header button{padding:.4rem .65rem;border:1px solid #64748b;border-radius:.35rem;background:#1e293b;color:#fff}.hud-panel__content{max-height:calc(100vh - 13rem);overflow:auto;padding:1rem}.hud-panel__content section{padding:1rem;border:1px solid #334155;border-radius:.55rem;background:#0f172a}.hud-panel__content h3{margin-bottom:.7rem;color:#fbbf24;font-weight:900}.hud-panel__content article{padding:.65rem 0;border-bottom:1px solid #334155}.panel-columns,.character-sheet{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}.character-sheet dl,.item-details dl{display:grid;grid-template-columns:repeat(2,1fr);gap:.45rem}.character-sheet dl div,.item-details dl div{padding:.5rem;background:#020617}.equipment-slot{display:flex;width:100%;justify-content:space-between;margin:.35rem 0;padding:.65rem;border:1px solid #334155;border-radius:.35rem;background:#020617;color:#e2e8f0}.equipment-slot.filled{border-color:#818cf8}.hud-panel-enter-active,.hud-panel-leave-active{transition:opacity .16s ease}.hud-panel-enter-from,.hud-panel-leave-to{opacity:0}
+
+.equipment-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.65rem}.equipment-grid .equipment-slot{display:grid;grid-template-columns:1fr;gap:.25rem;min-height:8.5rem;margin:0;padding:.45rem;text-align:center}.equipment-grid .equipment-slot.selected{border-color:#fbbf24;box-shadow:0 0 0 2px #92400e}.equipment-slot__image{display:grid;height:5.5rem;place-items:center;overflow:hidden;border:1px solid #334155;border-radius:.3rem;background:linear-gradient(145deg,#111827,#020617)}.equipment-slot__image img{width:100%;height:100%;object-fit:cover}.equipment-slot__image i{color:#64748b;font-size:2.4rem;font-style:normal}.equipment-slot.filled .equipment-slot__image{border-color:#22c55e;background:radial-gradient(circle,#173c25,#020617)}.equipment-slot small{overflow:hidden;color:#94a3b8;font-size:.65rem;text-overflow:ellipsis;white-space:nowrap}.proficiency-category{margin:.5rem 0;border:1px solid #334155;border-radius:.4rem;background:#020617}.proficiency-category summary{display:flex;justify-content:space-between;padding:.7rem;cursor:pointer}.proficiency-category summary span{color:#94a3b8}.proficiency-category article{padding:.65rem .8rem}.equipment-summary{grid-column:1/-1;min-height:max-content}.equipment-summary__list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.45rem}.equipment-summary__list span{display:flex;flex-direction:column;padding:.5rem;border:1px solid #334155;border-radius:.35rem;background:#020617;color:#94a3b8}.equipment-summary__list b{color:#e2e8f0}.character-sheet{padding-bottom:3rem}
+
+@media (max-width: 760px) {
+  .dev-tools-filter {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .game-navigation {
@@ -1775,21 +2206,14 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 760px) {
-  .game-screen {
-    grid-template-columns: 1fr;
-  }
-
-  .player-panel {
-    border-right: 0;
-    border-bottom: 2px solid #475569;
-  }
+  .player-panel{top:4.5rem;left:.5rem;width:12rem;max-height:10rem;padding:.65rem}.player-panel .resource-section{grid-template-columns:repeat(2,1fr)}.player-panel .player-header,.player-panel .hud-weapon{display:none}.map-header{padding-left:0}.hud-action-bar{bottom:.4rem;width:calc(100vw - .8rem);justify-content:center;gap:.2rem;padding:.3rem}.hud-action-bar button{flex-direction:column;gap:.1rem;padding:.3rem;font-size:.65rem}.hud-action-bar kbd{min-width:1.35rem;height:1.35rem}.panel-columns,.character-sheet{grid-template-columns:1fr}.hud-panel-backdrop{padding:2rem .5rem 4.5rem}.hud-panel__content{max-height:calc(100vh - 9rem)}
 
   .map-section {
     padding: 1rem;
   }
 
   .map-frame {
-    height: 75vh;
+    height: calc(100vh - 2rem);
   }
 
 }

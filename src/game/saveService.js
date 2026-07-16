@@ -25,7 +25,7 @@ const isIntegerArray = (value, maximum) => Array.isArray(value)
 export function validateSave(value) {
   if (!value || typeof value !== 'object') return { valid: false, reason: 'missing-data' }
   if (value.saveVersion !== SAVE_VERSION) return { valid: false, reason: 'unsupported-version' }
-  if (typeof value.runId !== 'string' || typeof value.seed !== 'string' || !['warrior', 'mage'].includes(value.characterId)) {
+  if (typeof value.runId !== 'string' || typeof value.seed !== 'string' || value.characterId !== 'custom') {
     return { valid: false, reason: 'missing-fields' }
   }
   if (value.regionId !== 'meadows') return { valid: false, reason: 'unsupported-region' }

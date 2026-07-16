@@ -1,39 +1,50 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { buildCharacterCreation, changeAttribute, createCharacterDraft, toggleProficiency } from '../src/game/characterCreation.js'
 import { cloneCharacterState, createCharacterState, isValidCharacterState, restoreCharacterState } from '../src/game/characterState.js'
 
-const character = createCharacterState({ id: 'character-test', name: 'Hero', characterClass: 'warrior' })
+function completeCreation() {
+  const draft = createCharacterDraft()
+  draft.name = 'Aldren'
+  for (const stat of ['might', 'defense', 'vitality', 'agility']) {
+    changeAttribute(draft, stat, 2)
+  }
+  toggleProficiency(draft, 'Camping')
+  toggleProficiency(draft, 'Swordsmanship')
+  draft.startingWeaponId = 'wooden_club'
+  return buildCharacterCreation(draft)
+}
 
-test('creates a complete character state with identity and progression defaults', () => {
-  assert.equal(character.id, 'character-test')
-  assert.equal(character.name, 'Hero')
-  assert.equal(character.class, 'warrior')
+const creation = completeCreation()
+const character = createCharacterState({ id: 'character-test', ...creation })
+
+test('CharacterState stores identity, progression and all creation data', () => {
+  assert.equal(character.name, 'Aldren')
   assert.equal(character.level, 1)
   assert.equal(character.experience, 0)
+  assert.deepEqual(character.stats, creation.attributes)
+  assert.deepEqual(character.proficiencies, creation.proficiencies)
+  assert.deepEqual(character.startingWeapon, creation.startingWeapon)
+  assert.deepEqual(character.startingSkills, creation.startingSkills)
+  assert.deepEqual(character.equipment, creation.equipment)
   assert.equal(isValidCharacterState(character), true)
 })
 
-test('new character starts with 18 current and maximum HP and zero gold', () => {
+test('new character starts with 18 HP, zero gold and empty runtime collections', () => {
   assert.deepEqual(character.health, { current: 18, max: 18 })
   assert.equal(character.gold, 0)
-})
-
-test('all four base stats start at exactly three', () => {
-  assert.deepEqual(character.stats, { might: 3, agility: 3, wits: 3, will: 3 })
-})
-
-test('inventory, statuses, flags and equipment slots start empty', () => {
   assert.deepEqual(character.inventory, [])
   assert.deepEqual(character.statuses, [])
   assert.deepEqual(character.flags, {})
-  assert.deepEqual(character.equipment, { weapon: null, armor: null, accessory: null })
 })
 
-test('cloning and restoring character state does not share mutable collections', () => {
+test('cloning and restoring preserve creation data without shared mutable state', () => {
   const clone = cloneCharacterState(character)
-  clone.inventory.push('future-item')
-  clone.flags.changed = true
-  assert.deepEqual(character.inventory, [])
-  assert.deepEqual(character.flags, {})
+  clone.stats.might = 5
+  clone.proficiencies.Camping = 'Untrained'
+  clone.startingSkills.push('future-skill')
+  assert.notEqual(character.stats.might, clone.stats.might)
+  assert.equal(character.proficiencies.Camping, 'Novice')
+  assert.equal(character.startingSkills.includes('future-skill'), false)
   assert.deepEqual(restoreCharacterState(clone, character), clone)
 })

@@ -3,7 +3,6 @@ import { computed, nextTick, onErrorCaptured, ref } from 'vue'
 import MainMenu from './views/MainMenu.vue'
 import MenuTwo from './views/MenuTwo.vue'
 import MenuThree from './views/MenuThree.vue'
-import { characterClasses } from './data/characterClasses.js'
 import { createNewRun, updateRunProgress } from './game/gameState.js'
 import { readSave, removeSave, writeSave } from './game/saveService.js'
 
@@ -20,9 +19,8 @@ const mapError = ref('')
 
 const saveInfo = computed(() => {
   if (!activeRun.value || saveStatus.value !== 'valid') return null
-  const character = characterClasses.find((item) => item.id === activeRun.value.characterId)
   return {
-    characterName: activeRun.value.characterState?.name ?? character?.name ?? 'Unknown hero',
+    characterName: activeRun.value.characterState?.name ?? 'Unknown hero',
     moveCount: activeRun.value.time.moveCount,
     updatedAt: new Date(activeRun.value.updatedAt).toLocaleString(),
   }
@@ -61,13 +59,7 @@ function deleteBrokenSave() {
 }
 
 async function openMenuThree(run) {
-  const character = characterClasses.find((item) => item.id === run.characterId)
-  if (!character) {
-    saveStatus.value = 'invalid'
-    saveMessage.value = 'invalid-save'
-    return
-  }
-  selectedCharacter.value = character
+  selectedCharacter.value = { id: run.characterState.id, name: run.characterState.name, icon: '⚔️' }
   activeRun.value = run
   mapError.value = ''
   isOpeningMap.value = true
@@ -77,11 +69,11 @@ async function openMenuThree(run) {
   currentView.value = 'menu-three'
 }
 
-async function createRunForCharacter(character) {
+async function createRunForCharacter(characterCreation) {
   if (busy.value) return
   busy.value = true
   try {
-    const run = createNewRun(character.id)
+    const run = createNewRun(characterCreation)
     const result = writeSave(run)
     const storedRun = result.ok ? result.save : run
     saveStatus.value = result.ok ? 'valid' : 'unavailable'
