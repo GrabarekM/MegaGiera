@@ -12,11 +12,11 @@ test('all eight attributes start at one with eight points remaining', () => {
 
 test('attributes cannot exceed five, fall below one or overspend points', () => {
   const draft = createCharacterDraft()
-  for (let index = 0; index < 10; index += 1) changeAttribute(draft, 'might', 1)
-  assert.equal(draft.attributes.might, 5)
-  for (let index = 0; index < 10; index += 1) changeAttribute(draft, 'might', -1)
-  assert.equal(draft.attributes.might, 1)
-  for (const id of ['might', 'defense']) for (let index = 0; index < 4; index += 1) changeAttribute(draft, id, 1)
+  for (let index = 0; index < 10; index += 1) changeAttribute(draft, 'strength', 1)
+  assert.equal(draft.attributes.strength, 5)
+  for (let index = 0; index < 10; index += 1) changeAttribute(draft, 'strength', -1)
+  assert.equal(draft.attributes.strength, 1)
+  for (const id of ['strength', 'defense']) for (let index = 0; index < 4; index += 1) changeAttribute(draft, id, 1)
   assert.equal(getPointsRemaining(draft.attributes), 0)
   assert.equal(changeAttribute(draft, 'vitality', 1), false)
 })
@@ -40,7 +40,7 @@ test('Start Run stays blocked while attribute points remain', () => {
 test('completed creation stores weapon, skills, ranks and empty equipment', () => {
   const draft = createCharacterDraft()
   draft.name = 'Lyra'; draft.startingWeaponId = 'rusty_dagger'
-  for (const id of ['might', 'defense']) for (let index = 0; index < 4; index += 1) changeAttribute(draft, id, 1)
+  for (const id of ['strength', 'defense']) for (let index = 0; index < 4; index += 1) changeAttribute(draft, id, 1)
   toggleProficiency(draft, 'Fencing'); toggleProficiency(draft, 'Scouting')
   const creation = buildCharacterCreation(draft)
   assert.equal(canStartRun(draft), true)

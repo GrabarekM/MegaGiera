@@ -1,4 +1,4 @@
-import { ATTRIBUTE_DEFINITIONS, EQUIPMENT_SLOTS, PROFICIENCY_NAMES, STARTING_WEAPONS } from '../data/characterCreation.js'
+import { ATTRIBUTE_DEFINITIONS, EQUIPMENT_SLOTS, FANTASY_NAMES, PROFICIENCY_NAMES, STARTING_WEAPONS } from '../data/characterCreation.js'
 
 export const ATTRIBUTE_POINTS = 8
 export const ATTRIBUTE_MIN = 1
@@ -56,4 +56,20 @@ export function buildCharacterCreation(draft) {
     startingSkills: [...weapon.combatSkills],
     equipment: Object.fromEntries(EQUIPMENT_SLOTS.map(({ id }) => [id, null])),
   }
+}
+
+export function createRandomCharacterCreation(random = Math.random) {
+  const draft = createCharacterDraft()
+  draft.name = FANTASY_NAMES[Math.floor(random() * FANTASY_NAMES.length)]
+  for (let point = 0; point < ATTRIBUTE_POINTS; point += 1) {
+    const eligible = ATTRIBUTE_DEFINITIONS.filter(({ id }) => draft.attributes[id] < ATTRIBUTE_MAX)
+    changeAttribute(draft, eligible[Math.floor(random() * eligible.length)].id, 1)
+  }
+  const proficiencies = [...PROFICIENCY_NAMES]
+  for (let count = 0; count < NOVICE_PROFICIENCY_LIMIT; count += 1) {
+    const index = Math.floor(random() * proficiencies.length)
+    toggleProficiency(draft, proficiencies.splice(index, 1)[0])
+  }
+  draft.startingWeaponId = STARTING_WEAPONS[Math.floor(random() * STARTING_WEAPONS.length)].id
+  return buildCharacterCreation(draft)
 }

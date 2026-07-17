@@ -41,7 +41,7 @@ test('shortcuts do not run while typing or editing content', () => {
 })
 
 test('panel configuration provides reusable labels, tooltips and shortcuts', () => {
-  assert.deepEqual(GAME_PANELS.filter(({ shortcut }) => shortcut).map(({ shortcut }) => shortcut), ['c', 'k', 'i', 'j'])
+  assert.deepEqual(GAME_PANELS.filter(({ shortcut }) => shortcut).map(({ shortcut }) => shortcut), ['c', 'k', 'i', 'b', 'j'])
   assert.ok(GAME_PANELS.every(({ tooltip }) => tooltip))
 })
 
@@ -71,4 +71,12 @@ test('Equipment uses icon-ready slots and Character summary spans the full panel
   assert.match(source, /class="equipment-summary"/)
   assert.match(source, /\.equipment-summary\{grid-column:1\/-1/)
   assert.match(source, /\.character-sheet\{padding-bottom:3rem/)
+})
+
+test('Character Sheet exposes Book Collection and Book Journal', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const source = await readFile(new URL('../src/views/MenuThree.vue', import.meta.url), 'utf8')
+  assert.match(source, /Book Collection/)
+  assert.match(source, /Books Found/)
+  assert.match(source, /Book Journal/)
 })

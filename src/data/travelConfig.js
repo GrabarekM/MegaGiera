@@ -1,33 +1,17 @@
 export const MINUTES_PER_HOUR = 60
 
 export const TRAVEL_TIME_MINUTES = Object.freeze({
-  road: 60,
-  bridge: 60,
-  city_street: 60,
-  city_gate: 60,
-  city_market: 60,
-  city_residential: 60,
-  gravel_road: 120,
-  wooden_bridge: 120,
-  grassland: 180,
-  flower_field: 180,
-  tall_grass: 180,
-  farm: 180,
-  village_house: 120,
-  village_square: 120,
-  inn: 180,
-  ruins: 180,
-  shrine: 180,
-  bandit_camp: 180,
-  forest: 240,
-  dense_forest: 300,
-  rocky_hills: 300,
-  cave: 300,
-  rocky_ground: 360,
+  road: 30, bridge: 30, city_street: 30, city_gate: 30, city_market: 30, city_residential: 30,
+  gravel_road: 45, wooden_bridge: 45,
+  grassland: 60, flower_field: 60, tall_grass: 60, farm: 60,
+  village_house: 30, village_square: 30, inn: 30,
+  ruins: 60, shrine: 60, bandit_camp: 60,
+  forest: 60, dense_forest: 60,
+  rocky_hills: 90, cave: 60, mine: 60, temple: 60,
+  rocky_ground: 120, mountains: 120, swamp: 120, dungeon_interior: 10,
   river: null,
   lake: null,
   sea: null,
-  mountains: null,
   city_wall: null,
 })
 
@@ -39,8 +23,8 @@ export function getTerrainTravelTime(terrain) {
 
 export function getTileTravelTime(tile) {
   if (!tile || typeof tile !== 'object') throw new Error('A destination tile is required.')
-  if (tile.settlementType === 'city') return 60
-  if (tile.settlementType === 'village') return 120
+  if (tile.settlementType === 'city') return 30
+  if (tile.settlementType === 'village') return 30
   return getTerrainTravelTime(tile.terrain)
 }
 

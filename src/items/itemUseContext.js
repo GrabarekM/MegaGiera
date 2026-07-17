@@ -1,0 +1,2 @@
+export const ITEM_USE_MODE = Object.freeze({ EXPLORATION: 'exploration', COMBAT: 'combat', CAMP: 'camp', TOWN: 'town', DIALOGUE: 'dialogue' })
+export function createItemUseContext({ position = null, time, isSafeZone = false, isCombatActive = false, activeLightSource = null, period = null, mode = ITEM_USE_MODE.EXPLORATION } = {}) { return Object.freeze({ position, time, currentHour: time?.hour ?? null, isSafeZone: Boolean(isSafeZone), isCombatActive: Boolean(isCombatActive), activeLightSource, period, mode }) }

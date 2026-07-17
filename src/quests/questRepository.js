@@ -1,0 +1,2 @@
+import{createQuestRuntime}from'./questModels.js';import{QUEST_STATUS}from'./questConstants.js'
+export class QuestRepository{constructor(runtime={}){this.runtime=createQuestRuntime(runtime)}get(id){return this.runtime.instances.find(x=>x.instanceId===id)??null}active(questId){return this.runtime.instances.find(x=>x.questId===questId&&[QUEST_STATUS.ACTIVE,QUEST_STATUS.RESOLVING,QUEST_STATUS.SUSPENDED].includes(x.status))??null}serialize(){return structuredClone(this.runtime)}reset(){this.runtime=createQuestRuntime()}}

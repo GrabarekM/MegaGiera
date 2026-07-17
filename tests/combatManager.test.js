@@ -16,12 +16,12 @@ import { resolveBlock } from '../src/combat/blockResolver.js'
 import { PROFICIENCY_NAMES } from '../src/data/characterCreation.js'
 import { WEAPONS } from '../src/data/weapons.js'
 
-const threeStats = { might: 3, defense: 3, vitality: 3, agility: 3, magicPower: 3, wisdom: 3, perception: 3, luck: 3 }
+const threeStats = { strength: 3, defense: 3, vitality: 3, agility: 3, magicPower: 3, wisdom: 3, perception: 3, luck: 3 }
 const character = createCharacterState({ id: 'combat-hero', name: 'Hero', attributes: threeStats })
 const start = () => {
   const manager = new CombatManager({ diceService: new DiceService(() => 0) })
   const result = manager.startCombat({ character, initiator: COMBAT_INITIATOR.PLAYER })
-  manager.selectInitiativeAttribute('might')
+  manager.selectInitiativeAttribute('strength')
   return { manager, result }
 }
 
@@ -72,12 +72,12 @@ test('skill initiative uses its value and gives exact ties to the player', () =>
 })
 
 test('enemy chooses the highest current preferred initiative attribute', () => {
-  const enemy = { stats: { agility: 4, vitality: 7, might: 12 }, preferredInitiativeStats: ['agility', 'vitality'] }
+  const enemy = { stats: { agility: 4, vitality: 7, strength: 12 }, preferredInitiativeStats: ['agility', 'vitality'] }
   assert.equal(chooseInitiativeAttribute(enemy), 'vitality')
 })
 
 test('enemy falls back to its highest attribute when preferences are empty', () => {
-  const enemy = { stats: { might: 3, defense: 8, vitality: 2, agility: 4, magicPower: 1, wisdom: 5 }, preferredInitiativeStats: [] }
+  const enemy = { stats: { strength: 3, defense: 8, vitality: 2, agility: 4, magicPower: 1, wisdom: 5 }, preferredInitiativeStats: [] }
   assert.equal(chooseInitiativeAttribute(enemy), 'defense')
 })
 
@@ -106,8 +106,8 @@ test('player initiator chooses the attribute and wins equal comparisons', () => 
   const manager = new CombatManager()
   const result = manager.startCombat({ character, initiator: COMBAT_INITIATOR.PLAYER })
   assert.equal(result.combat.phase, COMBAT_PHASE.INITIATIVE_SELECTION)
-  assert.equal(manager.selectInitiativeAttribute('might').ok, true)
-  assert.equal(manager.activeCombat.initiativeAttribute, 'might')
+  assert.equal(manager.selectInitiativeAttribute('strength').ok, true)
+  assert.equal(manager.activeCombat.initiativeAttribute, 'strength')
   assert.equal(manager.activeCombat.initiativeWinner, COMBAT_INITIATOR.PLAYER)
   assert.deepEqual(manager.activeCombat.initiativeComparison, { player: 3, enemy: 3 })
 })
@@ -149,11 +149,11 @@ test('action resolution deals damage and creates structured roll and HP logs', (
   assert.equal(manager.activeCombat.enemies[0].currentHealth, enemyHp - 5)
 })
 
-test('Strike uses d6 and Might while Bite uses d4 and a base of one', () => {
+test('Strike uses d6 and Strength while Bite uses d4 and a base of one', () => {
   const dice = new DiceService(() => 0)
-  const actor = { stats: { might: 3 } }
-  assert.deepEqual(resolveDamage({ actor, skill: { dice: 6, baseDamage: 0, usedStat: 'might', statScaling: 1 }, diceService: dice }), {
-    roll: 1, damage: 4, die: 6, stat: 'might', statValue: 3, baseDamage: 0, calculation: '3 + 1 = 4',
+  const actor = { stats: { strength: 3 } }
+  assert.deepEqual(resolveDamage({ actor, skill: { dice: 6, baseDamage: 0, usedStat: 'strength', statScaling: 1 }, diceService: dice }), {
+    roll: 1, damage: 4, die: 6, stat: 'strength', statValue: 3, baseDamage: 0, calculation: '3 + 1 = 4',
   })
   assert.deepEqual(resolveDamage({ actor, skill: { dice: 4, baseDamage: 1, usedStat: 'agility', statScaling: 0 }, diceService: dice }), {
     roll: 1, damage: 2, die: 4, stat: 'agility', statValue: 0, baseDamage: 1, calculation: '1 + 1 = 2',
@@ -176,7 +176,7 @@ test('detailed Combat Logs show calculations and reference the same source entri
   manager.diceService.setFixedRoll(2)
   manager.selectPlayerSkill('player_strike'); manager.resolveEnemySelection(); manager.resolveInitiative(); manager.resolveActions()
   const details = buildDetailedCombatLog(manager.activeCombat.log)
-  assert.equal(details[0].stat, 'might')
+  assert.equal(details[0].stat, 'strength')
   assert.equal(details[0].dice, 'd6')
   assert.equal(details[0].roll, 2)
   assert.equal(details[0].calculation, '3 + 2 = 5')
@@ -197,8 +197,8 @@ test('the three player skills expose their stat, die and initiative in data', ()
     [PLAYER_QUICK_STRIKE, PLAYER_STRIKE, PLAYER_HEAVY_STRIKE].map(({ name, usedStat, dice, initiative }) => ({ name, usedStat, dice, initiative })),
     [
       { name: 'Quick Strike', usedStat: 'agility', dice: 4, initiative: 8 },
-      { name: 'Strike', usedStat: 'might', dice: 6, initiative: 5 },
-      { name: 'Heavy Strike', usedStat: 'might', dice: 10, initiative: 2 },
+      { name: 'Strike', usedStat: 'strength', dice: 6, initiative: 5 },
+      { name: 'Heavy Strike', usedStat: 'strength', dice: 10, initiative: 2 },
     ],
   )
   assert.ok(PLAYER_QUICK_STRIKE.initiative > PLAYER_STRIKE.initiative)
@@ -310,7 +310,7 @@ test('damage application never lowers HP below zero', () => {
 test('a defeated target does not perform its queued action and victory ends combat', () => {
   const manager = new CombatManager({ diceService: new DiceService(() => 0.999999) })
   manager.startCombat({ character, initiator: COMBAT_INITIATOR.PLAYER })
-  manager.selectInitiativeAttribute('might')
+  manager.selectInitiativeAttribute('strength')
   manager.activeCombat.enemies[0].currentHealth = 1
   manager.selectPlayerSkill('player_strike'); manager.resolveEnemySelection(); manager.resolveInitiative()
   const resolved = manager.resolveActions()

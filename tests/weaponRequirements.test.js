@@ -6,7 +6,7 @@ import { resolveHitCheck, resolveWeaponRequirements } from '../src/combat/weapon
 import { WEAPON_LIST, WEAPONS } from '../src/data/weapons.js'
 
 const noviceCharacter = {
-  stats: { might: 2, agility: 3 },
+  stats: { strength: 2, agility: 3 },
   proficiencies: { 'Mace Fighting': 'Novice', Fencing: 'Novice' },
 }
 
@@ -18,15 +18,15 @@ test('every weapon defines complete attribute and proficiency requirements', () 
     assert.ok(Array.isArray(weapon.combatSkills) && weapon.combatSkills.length > 0)
     for (const field of ['id', 'displayName', 'weaponType', 'baseDamage', 'description', 'rarity', 'value']) assert.ok(field in weapon)
   }
-  assert.equal(WEAPONS.wooden_club.requiredAttribute, 'might')
+  assert.equal(WEAPONS.wooden_club.requiredAttribute, 'strength')
   assert.equal(WEAPONS.wooden_club.requiredProficiency, 'Mace Fighting')
 })
 
 test('missing required attribute applies a 15% final damage penalty', () => {
-  const requirements = resolveWeaponRequirements({ stats: { might: 1 }, proficiencies: { 'Mace Fighting': 'Novice' } }, WEAPONS.wooden_club)
+  const requirements = resolveWeaponRequirements({ stats: { strength: 1 }, proficiencies: { 'Mace Fighting': 'Novice' } }, WEAPONS.wooden_club)
   assert.equal(requirements.attributeMet, false)
   assert.equal(requirements.damageMultiplier, 0.85)
-  const damage = resolveDamage({ actor: { stats: { might: 3 } }, skill: { dice: 4, usedStat: 'might', statScaling: 1 }, weapon: WEAPONS.wooden_club, damageMultiplier: requirements.damageMultiplier, diceService: { roll: () => 4 } })
+  const damage = resolveDamage({ actor: { stats: { strength: 3 } }, skill: { dice: 4, usedStat: 'strength', statScaling: 1 }, weapon: WEAPONS.wooden_club, damageMultiplier: requirements.damageMultiplier, diceService: { roll: () => 4 } })
   assert.equal(damage.rawDamage, 7)
   assert.equal(damage.damage, 5)
 })

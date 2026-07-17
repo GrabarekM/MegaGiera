@@ -11,20 +11,23 @@ import { calculateTileTravelTime, calculateTravelTime, getTerrainTravelTime, get
 test('new run begins on day 1 at 06:00', () => assert.deepEqual(createInitialTime(), { day: 1, hour: 6, minute: 0, moveCount: 0 }))
 
 test('terrain travel configuration contains the required travel durations', () => {
-  assert.equal(getTerrainTravelTime('road'), 60)
-  assert.equal(getTerrainTravelTime('bridge'), 60)
-  assert.equal(getTerrainTravelTime('gravel_road'), 120)
-  assert.equal(getTerrainTravelTime('wooden_bridge'), 120)
-  assert.equal(getTerrainTravelTime('grassland'), 180)
-  assert.equal(getTerrainTravelTime('forest'), 240)
-  assert.equal(getTerrainTravelTime('rocky_hills'), 300)
+  assert.equal(getTerrainTravelTime('road'), 30)
+  assert.equal(getTerrainTravelTime('bridge'), 30)
+  assert.equal(getTerrainTravelTime('gravel_road'), 45)
+  assert.equal(getTerrainTravelTime('wooden_bridge'), 45)
+  assert.equal(getTerrainTravelTime('grassland'), 60)
+  assert.equal(getTerrainTravelTime('forest'), 60)
+  assert.equal(getTerrainTravelTime('rocky_hills'), 90)
+  assert.equal(getTerrainTravelTime('mountains'), 120)
+  assert.equal(getTerrainTravelTime('swamp'), 120)
+  assert.equal(getTerrainTravelTime('dungeon_interior'), 10)
   assert.equal(TRAVEL_TIME_MINUTES.lake, null)
 })
 
 test('movement advances time by the destination terrain duration', () => {
   const cases = [
-    ['road', 7, 0], ['bridge', 7, 0], ['gravel_road', 8, 0], ['wooden_bridge', 8, 0],
-    ['grassland', 9, 0], ['forest', 10, 0], ['rocky_hills', 11, 0],
+    ['road', 6, 30], ['bridge', 6, 30], ['gravel_road', 6, 45], ['wooden_bridge', 6, 45],
+    ['grassland', 7, 0], ['forest', 7, 0], ['rocky_hills', 7, 30],
   ]
   for (const [terrain, hour, minute] of cases) {
     assert.deepEqual(advanceMovementTime(createInitialTime(), getTerrainTravelTime(terrain)), { day: 1, hour, minute, moveCount: 1 })
@@ -33,15 +36,15 @@ test('movement advances time by the destination terrain duration', () => {
 
 test('movement and UI formatting preserve configured travel time', () => {
   const time = advanceMovementTime(createInitialTime(), getTerrainTravelTime('gravel_road'))
-  assert.equal(formatHour(time.hour, time.minute), '08:00')
+  assert.equal(formatHour(time.hour, time.minute), '06:45')
   assert.equal(formatHour(6, 0), '06:00')
 })
 
 test('city and village context has explicit priority over terrain', () => {
-  assert.equal(getTileTravelTime({ terrain: 'grassland', settlementType: 'city' }), 60)
-  assert.equal(getTileTravelTime({ terrain: 'road', settlementType: 'village' }), 120)
-  assert.equal(getTileTravelTime({ terrain: 'forest' }), 240)
-  assert.equal(calculateTileTravelTime({ terrain: 'gravel_road' }), 120)
+  assert.equal(getTileTravelTime({ terrain: 'grassland', settlementType: 'city' }), 30)
+  assert.equal(getTileTravelTime({ terrain: 'road', settlementType: 'village' }), 30)
+  assert.equal(getTileTravelTime({ terrain: 'forest' }), 60)
+  assert.equal(calculateTileTravelTime({ terrain: 'gravel_road' }), 45)
 })
 
 test('crossing midnight and the 06:00 day boundary works with minutes', () => {
@@ -94,8 +97,8 @@ test('advanceTime supports multiple days and shared hooks', () => {
 })
 
 test('future travel modifiers compose outside movement and time systems', () => {
-  assert.equal(calculateTravelTime('forest', [0.75]), 180)
-  assert.equal(calculateTravelTime('road', [(minutes) => minutes - 30]), 30)
+  assert.equal(calculateTravelTime('forest', [0.75]), 45)
+  assert.equal(calculateTravelTime('road', [(minutes) => minutes - 15]), 15)
 })
 
 test('movement view reads destination terrain travel time instead of a fixed duration', async () => {

@@ -1,0 +1,5 @@
+import { MERCHANT_CONFIG } from './merchantConstants.js'
+
+const roundPrice = (value) => MERCHANT_CONFIG.priceRounding === 'ceil' ? Math.ceil(value) : Math.round(value)
+export function calculateUnitPrice(item, merchant, transactionType, priceOverride = null, modifiers = {}) { if (!item || !merchant || (item.value === 0 && item.unsellable)) return 0; if (priceOverride !== null) return Math.max(MERCHANT_CONFIG.minimumPrice, Math.trunc(priceOverride)); const multiplier = transactionType === 'buy' ? merchant.buyPriceMultiplier : merchant.sellPriceMultiplier; const futureMultiplier = Object.values(modifiers).reduce((value, modifier) => value * (Number(modifier) || 1), 1); return Math.max(MERCHANT_CONFIG.minimumPrice, roundPrice(item.value * multiplier * futureMultiplier)) }
+export function calculateTransactionPrice(item, merchant, transactionType, quantity = 1, priceOverride = null, modifiers = {}) { const unitPrice = calculateUnitPrice(item, merchant, transactionType, priceOverride, modifiers); return { unitPrice, quantity, totalPrice: unitPrice * quantity } }

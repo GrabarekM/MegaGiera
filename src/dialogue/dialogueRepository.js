@@ -1,0 +1,2 @@
+import { createDialogueRuntime, createDialogueState } from './dialogueModels.js'
+export class DialogueRepository { constructor(runtime={}){this.runtime=createDialogueRuntime(runtime)} state(dialogue){return this.runtime.states[dialogue.id]??(this.runtime.states[dialogue.id]=createDialogueState({dialogueId:dialogue.id,npcId:dialogue.npcId}))} serialize(){return structuredClone(this.runtime)} reset(){this.runtime=createDialogueRuntime()} }

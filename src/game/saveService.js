@@ -1,21 +1,48 @@
 import { generateMeadowsRegion } from '../world/meadowsGenerator.js'
 import { isValidTime } from '../engine/timeSystem.js'
 import { isValidCharacterState } from './characterState.js'
+import { generateMerchantState, isValidMerchantState } from '../merchants/merchantStock.js'
+import { normalizeRecipeState } from '../crafting/recipeUnlockService.js'
+import { createEmptyPoiState, isValidPoiState, normalizePoiState } from '../poi/poiRepository.js'
+import { createEmptyEncounterRunState, createInitialEncounterRunState, isValidEncounterRunState, normalizeEncounterRunState } from '../encounters/encounterRepository.js'
+import { createInitialWorldEventRuntime, normalizeWorldEventRuntime } from '../worldEvents/worldEventRepository.js'
+import { createDialogueRuntime } from '../dialogue/dialogueModels.js'
+import { createQuestRuntime } from '../quests/questModels.js'
+import { createNpcScheduleRuntime } from '../npcSchedules/npcScheduleModels.js'
 
 export const SAVE_KEY = 'super-mega-giera.current-run'
-export const SAVE_VERSION = 7
+export const SAVE_VERSION = 8
 
 const LEGACY_HOUR_MIGRATION = Object.freeze({ 6: 6, 10: 9, 14: 15, 18: 18, 22: 21, 2: 3 })
 
 export function migrateSave(value) {
   if (!value || typeof value !== 'object') return value
-  if (value.saveVersion !== 3) return value
-  const migratedHour = LEGACY_HOUR_MIGRATION[value.time?.hour]
-  if (migratedHour === undefined) return value
+  const legacyStrengthKey = String.fromCharCode(109, 105, 103, 104, 116)
+  const savedCharacter = value.characterState
+  let migrated = value
+  if (!migrated.poiState) migrated = { ...migrated, poiState: createEmptyPoiState() }
+  else migrated = { ...migrated, poiState: normalizePoiState(migrated.poiState) }
+  if (!migrated.encounterState) migrated = { ...migrated, encounterState: createInitialEncounterRunState(migrated.seed, migrated.runId) }
+  else migrated = { ...migrated, encounterState: normalizeEncounterRunState(migrated.encounterState) }
+  migrated = { ...migrated, worldEventRuntime: normalizeWorldEventRuntime(migrated.worldEventRuntime ?? createInitialWorldEventRuntime(migrated.runId), migrated.runId) }
+  migrated = { ...migrated, dialogueRuntime: createDialogueRuntime(migrated.dialogueRuntime) }
+  migrated = { ...migrated, questRuntime: createQuestRuntime(migrated.questRuntime) }
+  migrated = { ...migrated, npcScheduleRuntime: createNpcScheduleRuntime(migrated.npcScheduleRuntime) }
+  if (savedCharacter && !savedCharacter.recipeState) migrated = { ...migrated, characterState: { ...savedCharacter, recipeState: normalizeRecipeState() } }
+  if (savedCharacter?.stats && Number.isInteger(savedCharacter.stats[legacyStrengthKey]) && !Number.isInteger(savedCharacter.stats.strength)) {
+    const stats = { ...savedCharacter.stats, strength: savedCharacter.stats[legacyStrengthKey] }
+    delete stats[legacyStrengthKey]
+    const startingWeapon = savedCharacter.startingWeapon?.requiredAttribute === legacyStrengthKey ? { ...savedCharacter.startingWeapon, requiredAttribute: 'strength' } : savedCharacter.startingWeapon
+    migrated = { ...migrated, characterState: { ...migrated.characterState, stats, startingWeapon } }
+  }
+  if (!migrated.merchantState && typeof migrated.seed === 'string' && typeof migrated.runId === 'string') migrated = { ...migrated, merchantState: generateMerchantState(migrated.seed, migrated.runId) }
+  if (migrated.saveVersion !== 3) return { ...migrated, saveVersion: SAVE_VERSION }
+  const migratedHour = LEGACY_HOUR_MIGRATION[migrated.time?.hour]
+  if (migratedHour === undefined) return migrated
   return {
-    ...value,
+    ...migrated,
     saveVersion: SAVE_VERSION,
-    time: { ...value.time, hour: migratedHour },
+    time: { ...migrated.time, hour: migratedHour },
   }
 }
 
@@ -31,6 +58,10 @@ export function validateSave(value) {
   if (value.regionId !== 'meadows') return { valid: false, reason: 'unsupported-region' }
   if (!isValidTime(value.time)) return { valid: false, reason: 'invalid-time' }
   if (!isValidCharacterState(value.characterState)) return { valid: false, reason: 'invalid-character' }
+  if (!isValidMerchantState(value.merchantState, value.runId)) return { valid: false, reason: 'invalid-merchant-state' }
+  if (!isValidPoiState(value.poiState)) return { valid: false, reason: 'invalid-poi-state' }
+  if (!isValidEncounterRunState(value.encounterState)) return { valid: false, reason: 'invalid-encounter-state' }
+  if (!value.worldEventRuntime?.worldState || !value.worldEventRuntime?.regionStates?.meadows) return { valid: false, reason: 'invalid-world-event-state' }
   if (!value.playerPosition || !Number.isInteger(value.playerPosition.row) || !Number.isInteger(value.playerPosition.column)) {
     return { valid: false, reason: 'invalid-position' }
   }

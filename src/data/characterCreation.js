@@ -1,5 +1,5 @@
 export const ATTRIBUTE_DEFINITIONS = Object.freeze([
-  ['might', 'Might'], ['defense', 'Defense'], ['vitality', 'Vitality'], ['agility', 'Agility'],
+  ['strength', 'Strength'], ['defense', 'Defense'], ['vitality', 'Vitality'], ['agility', 'Agility'],
   ['magicPower', 'Magic Power'], ['wisdom', 'Wisdom'], ['perception', 'Perception'], ['luck', 'Luck'],
 ].map(([id, name]) => Object.freeze({ id, name })))
 
@@ -27,9 +27,9 @@ export const PROFICIENCY_CATEGORIES = Object.freeze([
 ])
 
 export const EQUIPMENT_SLOTS = Object.freeze([
-  ['head', 'Head'], ['earrings', 'Earrings'], ['neck', 'Neck'], ['chest', 'Chest'], ['gloves', 'Gloves'],
-  ['bracelet', 'Bracelet'], ['ringLeft', 'Ring'], ['ringRight', 'Ring'], ['belt', 'Belt'], ['legs', 'Legs'],
-  ['feet', 'Feet'], ['cloak', 'Cloak'], ['robe', 'Robe'],
+  ['mainHand', 'Main Hand'], ['offHand', 'Off Hand'], ['head', 'Head'], ['neck', 'Neck'], ['chest', 'Chest'],
+  ['gloves', 'Gloves'], ['legs', 'Legs'], ['feet', 'Feet'], ['cloak', 'Cloak'], ['robe', 'Robe'],
+  ['ringLeft', 'Ring'], ['ringRight', 'Ring'], ['bracelet', 'Bracelet'],
 ].map(([id, name]) => Object.freeze({ id, name })))
 
 export { WEAPON_LIST as STARTING_WEAPONS } from './weapons.js'

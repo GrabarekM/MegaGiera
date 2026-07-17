@@ -4,6 +4,7 @@ import MainMenu from './views/MainMenu.vue'
 import MenuTwo from './views/MenuTwo.vue'
 import MenuThree from './views/MenuThree.vue'
 import { createNewRun, updateRunProgress } from './game/gameState.js'
+import { createRandomCharacterCreation } from './game/characterCreation.js'
 import { readSave, removeSave, writeSave } from './game/saveService.js'
 
 const initialSaveResult = readSave()
@@ -84,6 +85,10 @@ async function createRunForCharacter(characterCreation) {
   }
 }
 
+function quickStart() {
+  if (!busy.value) createRunForCharacter(createRandomCharacterCreation())
+}
+
 async function continueRun() {
   if (busy.value) return
   busy.value = true
@@ -132,6 +137,7 @@ onErrorCaptured((error) => {
       :save-error="saveStatus === 'invalid' ? saveMessage : ''"
       :busy="busy"
       @new-run="requestNewRun"
+      @quick-start="quickStart"
       @continue="continueRun"
       @delete-save="deleteBrokenSave"
     />

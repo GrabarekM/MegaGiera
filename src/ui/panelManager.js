@@ -2,7 +2,11 @@ export const GAME_PANELS = Object.freeze([
   Object.freeze({ id: 'character', label: 'Character', shortcut: 'c', tooltip: 'Open Character Sheet' }),
   Object.freeze({ id: 'skills', label: 'Skills', shortcut: 'k', tooltip: 'Open Skills' }),
   Object.freeze({ id: 'equipment', label: 'Equipment', shortcut: 'i', tooltip: 'Open Equipment' }),
+  Object.freeze({ id: 'inventory', label: 'Inventory', shortcut: 'b', tooltip: 'Open Inventory' }),
   Object.freeze({ id: 'journal', label: 'Journal', shortcut: 'j', tooltip: 'Open Journal' }),
+  Object.freeze({ id: 'knowledge', label: 'Knowledge', shortcut: null, tooltip: 'Open discovered Knowledge' }),
+  Object.freeze({ id: 'library', label: 'Library', shortcut: null, tooltip: 'Open Character Library' }),
+  Object.freeze({ id: 'recipes', label: 'Recipes', shortcut: null, tooltip: 'Open Recipe Journal and Crafting' }),
   Object.freeze({ id: 'settings', label: 'Settings', shortcut: null, tooltip: 'Open Settings' }),
 ])
 

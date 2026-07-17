@@ -12,7 +12,7 @@ export const COMBAT_PHASE = Object.freeze({
 export const COMBATANT_TYPE = Object.freeze({ PLAYER: 'player', ENEMY: 'enemy', ALLY: 'ally' })
 export const COMBAT_INITIATOR = Object.freeze({ PLAYER: 'player', ENEMY: 'enemy' })
 export const INITIATIVE_ATTRIBUTE = Object.freeze({
-  MIGHT: 'might', DEFENSE: 'defense', VITALITY: 'vitality', AGILITY: 'agility',
+  STRENGTH: 'strength', DEFENSE: 'defense', VITALITY: 'vitality', AGILITY: 'agility',
   MAGIC_POWER: 'magicPower', WISDOM: 'wisdom',
 })
 export const INITIATIVE_ATTRIBUTES = Object.freeze(Object.values(INITIATIVE_ATTRIBUTE))

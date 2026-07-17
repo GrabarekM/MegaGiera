@@ -9,16 +9,20 @@ import { resolveDamage } from './damageResolver.js'
 import { applyDamage } from './damageApplication.js'
 import { resolveBlock } from './blockResolver.js'
 import { isWeaponSkillAvailable, resolveHitCheck, resolveWeaponRequirements } from './weaponRequirementResolver.js'
+import { calculateCharacterStats } from '../character/characterStatCalculator.js'
 
 const success = (data = {}) => ({ ok: true, ...data })
 const failure = (error, details = {}) => ({ ok: false, error, ...details })
 let combatSequence = 0
 
 export class CombatManager {
-  constructor({ skillCatalog = COMBAT_SKILLS, enemyTemplates = ENEMY_TEMPLATES, diceService = new DiceService() } = {}) {
+  constructor({ skillCatalog = COMBAT_SKILLS, enemyTemplates = ENEMY_TEMPLATES, diceService = new DiceService(), statCalculator = calculateCharacterStats, practiceGainService = null } = {}) {
     this.skillCatalog = skillCatalog
     this.enemyTemplates = enemyTemplates
     this.diceService = diceService
+    this.statCalculator = statCalculator
+    this.practiceGainService = practiceGainService
+    this.characterRef = null
     this.activeCombat = null
     this.lastCombat = null
     this.listeners = new Set()
@@ -46,24 +50,26 @@ export class CombatManager {
     return success()
   }
 
-  startCombat({ character, enemyTemplateId = 'grey_wolf', initiator = COMBAT_INITIATOR.PLAYER, source = { type: 'developer', id: 'test-combat' } }) {
+  startCombat({ character, enemyTemplateId = 'grey_wolf', initiator = COMBAT_INITIATOR.PLAYER, source = { type: 'developer', id: 'test-combat' }, preparationModifiers = null }) {
     if (this.activeCombat) return failure(COMBAT_ERROR.COMBAT_ALREADY_ACTIVE)
     if (!Object.values(COMBAT_INITIATOR).includes(initiator)) return failure(COMBAT_ERROR.INVALID_INITIATOR)
     const template = this.enemyTemplates[enemyTemplateId]
     if (!template) return failure(COMBAT_ERROR.INVALID_COMBATANT)
     combatSequence += 1
     const id = `combat-${combatSequence}`
-    const weaponRequirements = resolveWeaponRequirements(character, character.startingWeapon)
+    const calculatedCharacter = this.statCalculator(character)
+    this.characterRef = character
+    const weaponRequirements = resolveWeaponRequirements({ ...character, stats: calculatedCharacter.finalStats }, calculatedCharacter.equippedWeapon)
     const configuredSkillIds = character.startingSkills?.length ? character.startingSkills : PLAYER_COMBAT_SKILLS.map((skill) => skill.id)
     const playerSkills = configuredSkillIds.map((skillId) => this.skillCatalog[skillId]).filter(Boolean)
       .filter((skill) => isWeaponSkillAvailable(skill, weaponRequirements))
-    const player = createPlayerCombatant(character, playerSkills, weaponRequirements)
+    const player = createPlayerCombatant(character, playerSkills, weaponRequirements, calculatedCharacter)
     const enemy = createEnemyCombatant(template, `${id}:enemy:1`, this.skillCatalog)
     this.activeCombat = {
       id, status: COMBAT_STATUS.PREPARING, round: 1, phase: COMBAT_PHASE.SETUP,
       player, enemies: [enemy], playerSelection: null, enemySelections: [], initiativeQueue: [],
       initiator, initiativeAttribute: null, initiativeWinner: null, initiativeComparison: null,
-      openingInitiativeApplied: false, lastAction: null, enemyAiDebug: [], log: [], result: null, source: { ...source }, worldBlocked: true,
+      openingInitiativeApplied: false, openingInitiativeModifiers: { player: preparationModifiers?.playerInitiativeModifier ?? 0, enemy: preparationModifiers?.enemyInitiativeModifier ?? 0 }, lastAction: null, enemyAiDebug: [], log: [], result: null, source: { ...source }, worldBlocked: true,
     }
     this.addLog('combat_started', 'Combat started.')
     this.addLog('combat_initiated', `${initiator === COMBAT_INITIATOR.PLAYER ? player.name : enemy.name} initiated combat.`, { initiator })
@@ -87,7 +93,10 @@ export class CombatManager {
   resolveOpeningInitiative(attribute) {
     const state = this.activeCombat
     const enemy = state.enemies[0]
-    const comparison = compareOpeningInitiative({ player: state.player, enemy, attribute, initiator: state.initiator })
+    const baseComparison = compareOpeningInitiative({ player: state.player, enemy, attribute, initiator: state.initiator })
+    const playerValue = baseComparison.playerValue + state.openingInitiativeModifiers.player
+    const enemyValue = baseComparison.enemyValue + state.openingInitiativeModifiers.enemy
+    const comparison = { ...baseComparison, playerValue, enemyValue, winner: playerValue === enemyValue ? state.initiator : playerValue > enemyValue ? COMBAT_INITIATOR.PLAYER : COMBAT_INITIATOR.ENEMY }
     state.initiativeAttribute = attribute
     state.initiativeWinner = comparison.winner
     state.initiativeComparison = { player: comparison.playerValue, enemy: comparison.enemyValue }
@@ -207,6 +216,7 @@ export class CombatManager {
         }
       }
       const resolved = resolveDamage({ actor, skill: action.skill, diceService: this.diceService, weapon: actor.weapon, damageMultiplier: requirements.damageMultiplier })
+      if (actor.type === 'player' && actor.weapon?.requiredProficiency && this.practiceGainService) this.practiceGainService.processSuccessfulAction(this.characterRef, actor.weapon.requiredProficiency, { actionId: `${this.activeCombat.id}:round:${this.activeCombat.round}:action:${action.skillId}`, successful: true, context: { combatId: this.activeCombat.id, round: this.activeCombat.round, targetType: target.type } })
       this.addLog('dice_rolled', `Roll d${resolved.die} = ${resolved.roll}`, { combatantId: actor.id, skillId: action.skillId, die: resolved.die, roll: resolved.roll })
       this.addLog('damage_resolved', `Damage = ${resolved.damage}`, {
         combatantId: actor.id, actorName: actor.name, targetName: target.name, skillId: action.skillId, damage: resolved.damage, stat: resolved.stat,

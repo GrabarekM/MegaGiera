@@ -1,0 +1,4 @@
+import{EVENT_VISIBILITY}from'./worldEventConstants.js'
+const level=(v)=>v>=8?'Extreme':v>=6?'High':v>=4?'Moderate':v>=2?'Low':'Minimal'
+export function createRegionStateViewModel(regionId,repository,database){const r=repository.region(regionId);if(!r)return null;const events=r.activeEventIds.map(id=>repository.getInstance(id)).filter(Boolean).map(i=>({instance:i,definition:database.get(i.eventDefinitionId)})).filter(x=>x.definition&&!([EVENT_VISIBILITY.HIDDEN,EVENT_VISIBILITY.SILENT].includes(x.definition.visibility)));return{displayName:regionId==='meadows'?'Meadows':regionId.replaceAll('_',' '),threat:level(r.threatLevel),safety:level(r.safetyLevel),roads:Object.entries(r.roadStates).map(([id,value])=>({name:id.replaceAll('_',' '),status:value?.state??value})),activeConditions:events.map(x=>x.definition.displayName),safeZones:Object.entries(r.temporaryModifiers).filter(([id,v])=>id.startsWith('safe:')&&v.enabled).map(([id])=>id.slice(5).replaceAll('_',' '))}}
+

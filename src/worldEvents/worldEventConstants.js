@@ -1,0 +1,14 @@
+export const WORLD_EVENT_STATE_VERSION = 1
+export const EVENT_STATE = Object.freeze({ INACTIVE:'Inactive', ELIGIBLE:'Eligible', SCHEDULED:'Scheduled', PENDING:'Pending', ACTIVE:'Active', RESOLVING:'Resolving', COMPLETED:'Completed', FAILED:'Failed', CANCELLED:'Cancelled', EXPIRED:'Expired', BLOCKED:'Blocked' })
+export const EFFECTS_STATUS = Object.freeze({ NOT_REQUIRED:'NotRequired', PENDING:'Pending', APPLYING:'Applying', APPLIED:'Applied', REVERTING:'Reverting', REVERTED:'Reverted', FAILED:'Failed', PENDING_CLEANUP:'PendingCleanup' })
+export const EVENT_TYPE = Object.freeze({ DELIVERY:'Delivery', THREAT_CHANGE:'ThreatChange', ROAD_STATE_CHANGE:'RoadStateChange', POI_ACTIVATION:'PoiActivation', POI_DEACTIVATION:'PoiDeactivation', ENCOUNTER_TABLE_CHANGE:'EncounterTableChange', MERCHANT_RESTOCK:'MerchantRestock', REGION_CONDITION:'RegionCondition', NIGHT_EVENT:'NightEvent', DISCOVERY:'Discovery', CONSEQUENCE:'Consequence', RECOVERY:'Recovery', SPECIAL:'Special' })
+export const EVENT_SCOPE = Object.freeze({ GLOBAL:'Global', REGION:'Region', LOCATION:'Location', MERCHANT:'Merchant', POI:'POI', ENCOUNTER:'Encounter', CHARACTER:'Character', MIXED:'Mixed' })
+export const EVENT_VISIBILITY = Object.freeze({ HIDDEN:'Hidden', SILENT:'Silent', NOTIFICATION:'Notification', MAJOR_NOTIFICATION:'MajorNotification', MAP_ONLY:'MapUpdateOnly', JOURNAL:'JournalPlaceholder' })
+export const TRIGGER_TYPE = Object.freeze({ WORLD_TIME:'WorldTimeReached', WORLD_DAY:'WorldDayReached', TIME_WINDOW:'TimeWindow', REGION_ENTERED:'RegionEntered', LOCATION_ENTERED:'LocationEntered', POI_COMPLETED:'PoiCompleted', POI_STATE_CHANGED:'PoiStateChanged', ENCOUNTER_RESOLVED:'EncounterResolved', COMBAT_VICTORY:'CombatVictory', WORLD_FLAG_SET:'WorldFlagSet', REGION_FLAG_SET:'RegionFlagSet', COUNTER_REACHED:'CounterReached', MANUAL:'Manual', DEVELOPER:'Developer', CHAINED_EVENT:'ChainedEvent' })
+export const REPEAT_POLICY = Object.freeze({ ONCE_PER_RUN:'OncePerRun', REPEATABLE:'Repeatable', COOLDOWN:'Cooldown', ONCE_PER_REGION:'OncePerRegion', ONCE_PER_LOCATION:'OncePerLocation', MANUAL_RESET:'ManualReset' })
+export const DURATION_TYPE = Object.freeze({ INSTANT:'Instant', PERMANENT:'Permanent', TIMED:'Timed', UNTIL_CONDITION:'UntilCondition', UNTIL_EVENT:'UntilEvent', MANUAL_END:'ManualEnd' })
+export const CONFLICT_POLICY = Object.freeze({ BLOCK_NEW:'BlockNew', REPLACE_LOWER:'ReplaceLowerPriority', ALLOW_BOTH:'AllowBoth' })
+export const SCHEDULE_STATUS = Object.freeze({ SCHEDULED:'Scheduled', READY:'Ready', PROCESSING:'Processing', ACTIVATED:'Activated', CANCELLED:'Cancelled', FAILED:'Failed' })
+export const worldMinutes = (day, time) => (Math.max(1, day) - 1) * 1440 + (typeof time === 'number' ? time * 60 : (time?.hour ?? 0) * 60 + (time?.minute ?? 0))
+export const fromWorldMinutes = (total) => ({ day: Math.floor(Math.max(0,total) / 1440) + 1, time: { hour: Math.floor((Math.max(0,total) % 1440) / 60), minute: Math.max(0,total) % 60 } })
+

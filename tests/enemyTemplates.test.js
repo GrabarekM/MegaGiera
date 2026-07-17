@@ -8,7 +8,7 @@ import { COMBAT_SKILLS } from '../src/data/combatSkills.js'
 import { ENEMY_TEMPLATE_LIST, ENEMY_TEMPLATES } from '../src/data/enemyTemplates.js'
 import { createCharacterState } from '../src/game/characterState.js'
 
-const REQUIRED_STATS = ['might', 'defense', 'vitality', 'agility', 'magicPower', 'wisdom']
+const REQUIRED_STATS = ['strength', 'defense', 'vitality', 'agility', 'magicPower', 'wisdom']
 const character = createCharacterState({ id: 'enemy-test-hero', name: 'Hero', characterClass: 'warrior' })
 
 test('registry contains exactly the five early-game enemy templates', () => {
@@ -38,7 +38,7 @@ for (const template of ENEMY_TEMPLATE_LIST) {
   test(`test combat can start with ${template.name} and exposes its intent`, () => {
     const manager = new CombatManager()
     const result = manager.startCombat({ character, enemyTemplateId: template.id, initiator: COMBAT_INITIATOR.PLAYER })
-    manager.selectInitiativeAttribute('might')
+    manager.selectInitiativeAttribute('strength')
     assert.equal(result.ok, true)
     assert.equal(manager.activeCombat.enemies[0].sourceRef.id, template.id)
     assert.ok(template.skillIds.includes(manager.activeCombat.enemySelections[0].skillId))
@@ -113,7 +113,7 @@ test('temperament changes final weights without enemy-specific branches', () => 
 test('used cooldown decreases once at round end and blocks the next intent', () => {
   const manager = new CombatManager({ diceService: { random: () => 0.9999, roll: () => 1 } })
   manager.startCombat({ character, enemyTemplateId: 'grey_wolf', initiator: COMBAT_INITIATOR.PLAYER })
-  manager.selectInitiativeAttribute('might')
+  manager.selectInitiativeAttribute('strength')
   manager.selectPlayerSkill('player_guard')
   manager.resolveEnemySelection(); manager.resolveInitiative(); manager.resolveActions()
   const heavyBite = manager.activeCombat.enemies[0].skills.find((skill) => skill.id === 'wolf_heavy_bite')
@@ -126,7 +126,7 @@ test('used cooldown decreases once at round end and blocks the next intent', () 
 test('Enemy Intent and Combat Log use the final AI decision and its reason', () => {
   const manager = new CombatManager()
   manager.startCombat({ character, enemyTemplateId: 'grey_wolf', initiator: COMBAT_INITIATOR.PLAYER })
-  manager.selectInitiativeAttribute('might')
+  manager.selectInitiativeAttribute('strength')
   manager.activeCombat.enemies[0].currentHealth = 7
   manager.prepareEnemyIntent()
   const intent = manager.activeCombat.enemySelections[0]

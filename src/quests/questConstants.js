@@ -1,0 +1,8 @@
+export const QUEST_STATUS=Object.freeze({ACTIVE:'Active',RESOLVING:'ResolvingStage',COMPLETED:'Completed',FAILED:'Failed',CANCELLED:'Cancelled',SUSPENDED:'Suspended',INVALID:'Invalid'})
+export const OBJECTIVE_STATUS=Object.freeze({INACTIVE:'Inactive',ACTIVE:'Active',IN_PROGRESS:'InProgress',COMPLETED:'Completed',FAILED:'Failed',SKIPPED:'Skipped',INVALID:'Invalid'})
+export const STAGE_STATUS=Object.freeze({LOCKED:'Locked',ACTIVE:'Active',RESOLVING:'Resolving',COMPLETED:'Completed',FAILED:'Failed',SKIPPED:'Skipped'})
+export const PROGRESS_TYPE=Object.freeze({BOOLEAN:'Boolean',COUNTER:'Counter',COLLECTION:'Collection',STATE_MATCH:'StateMatch',THRESHOLD:'Threshold',ORDERED_SEQUENCE:'OrderedSequence'})
+export const STAGE_POLICY=Object.freeze({ALL:'AllRequiredObjectives',ANY:'AnyRequiredObjective',COUNT:'RequiredCount',CONDITIONS:'ConditionsOnly',MANUAL:'Manual'})
+export const QUEST_AVAILABILITY=Object.freeze({HIDDEN:'Hidden',LOCKED:'VisibleLocked',AVAILABLE:'Available',ACTIVE:'AlreadyActive',COMPLETED:'CompletedNotRepeatable',EXHAUSTED:'Exhausted',INVALID:'Invalid'})
+export const QUEST_REPEAT=Object.freeze({ONCE:'OncePerRun',REPEATABLE:'Repeatable',MAXIMUM:'MaximumCompletions'})
+export const QUEST_EFFECT=Object.freeze({SET_WORLD_FLAG:'SetWorldFlag',SET_REGION_FLAG:'SetRegionFlag',GRANT_GOLD:'GrantGold',GRANT_KNOWLEDGE:'GrantKnowledge',GRANT_ITEM:'GrantItem',REMOVE_ITEM:'RemoveItem',REVEAL_POI:'RevealPoi',TRIGGER_WORLD_EVENT:'TriggerWorldEvent',SEND_NOTIFICATION:'SendNotification',START_QUEST:'StartQuest',COMPLETE_QUEST:'CompleteQuest',FAIL_QUEST:'FailQuest'})

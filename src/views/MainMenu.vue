@@ -3,7 +3,7 @@ import GameButton from '../components/GameButton.vue'
 import { gameConfig } from '../data/gameConfig.js'
 
 defineProps({ saveInfo: { type: Object, default: null }, saveError: { type: String, default: '' }, busy: Boolean })
-defineEmits(['new-run', 'continue', 'delete-save'])
+defineEmits(['new-run', 'quick-start', 'continue', 'delete-save'])
 </script>
 
 <template>
@@ -24,6 +24,7 @@ defineEmits(['new-run', 'continue', 'delete-save'])
           <button type="button" @click="$emit('delete-save')">Delete Save</button>
         </div>
         <div data-testid="main-new-run"><GameButton label="New Run" :disabled="busy" @click="$emit('new-run')" /></div>
+        <div data-testid="main-quick-start"><GameButton label="Quick Start" :disabled="busy" @click="$emit('quick-start')" /></div>
         <div data-testid="main-continue"><GameButton label="Continue" :disabled="busy || !saveInfo" @click="$emit('continue')" /></div>
       </div>
     </section>
