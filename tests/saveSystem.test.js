@@ -130,15 +130,40 @@ test('confirmed replacement removes old run and stores a new one', () => {
   assert.equal(readSave(storage).save.runId, 'run-2')
   assert.notEqual(readSave(storage).save.seed, baseRun.seed)
 })
-test('out-of-map and blocked player positions are rejected', () => {
-  assert.equal(validateSave({ ...baseRun, playerPosition: { row: -1, column: 0 } }).valid, false)
+test('out-of-map and blocked player positions fall back to the generated start', () => {
+  const outside = validateSave({ ...baseRun, playerPosition: { row: -1, column: 0 } })
+  assert.equal(outside.valid, true)
+  assert.equal(outside.usedPositionFallback, true)
   const map = generateMeadowsRegion(baseRun.seed)
   const blocked = map.tiles.find((tile) => !tile.walkable)
-  assert.equal(validateSave({ ...baseRun, playerPosition: { row: blocked.row, column: blocked.column } }).valid, false)
+  const blockedSave = validateSave({ ...baseRun, playerPosition: { row: blocked.row, column: blocked.column } })
+  assert.equal(blockedSave.valid, true)
+  assert.deepEqual(blockedSave.value.playerPosition, { row: map.tiles[map.startIndex].row, column: map.tiles[map.startIndex].column })
+})
+test('missing position and legacy nested world fields migrate safely', () => {
+  const legacy = { ...baseRun, saveVersion: SAVE_VERSION - 1, seed: undefined, regionId: undefined, playerPosition: undefined, world: { seed: baseRun.seed, regionId: 'meadows' } }
+  const storage = memoryStorage({ [SAVE_KEY]: JSON.stringify(legacy) })
+  const restored = readSave(storage)
+  assert.equal(restored.status, 'valid')
+  assert.equal(restored.save.seed, baseRun.seed)
+  assert.equal(restored.save.regionId, 'meadows')
+  assert.equal(restored.usedPositionFallback, true)
 })
 test('storage exceptions are converted into safe results', () => {
   const broken = { getItem() { throw new Error('denied') }, setItem() { throw new Error('full') }, removeItem() { throw new Error('denied') } }
   assert.equal(readSave(broken).status, 'invalid')
   assert.equal(writeSave(baseRun, broken).ok, false)
   assert.equal(removeSave(broken).ok, false)
+})
+
+test('new run reuses a supplied runtime map and starts on its start tile', () => {
+  const map = generateMeadowsRegion('supplied-map-seed')
+  const run = createNewRun('warrior', { seed: 'supplied-map-seed', runId: 'supplied-map-run', now: fixedNow, map })
+  assert.deepEqual(run.playerPosition, { row: map.tiles[map.startIndex].row, column: map.tiles[map.startIndex].column })
+})
+
+test('progress preserves world identity unless a replacement seed is supplied', () => {
+  const progress = { playerPosition: baseRun.playerPosition, time: baseRun.time, discovered: baseRun.discovered, visited: baseRun.visited }
+  assert.equal(updateRunProgress(baseRun, progress).seed, baseRun.seed)
+  assert.equal(updateRunProgress(baseRun, { ...progress, seed: 'developer-seed', regionId: 'meadows' }).seed, 'developer-seed')
 })

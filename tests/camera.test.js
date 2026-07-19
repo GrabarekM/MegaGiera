@@ -25,3 +25,11 @@ test('camera follows player in every direction and clamps to map bounds', () => 
   assert.deepEqual(calculateFollowScroll({ ...base, scrollLeft: 0, scrollTop: 0, playerCenterX: 0, playerCenterY: 0 }), { left: 0, top: 0 })
   assert.deepEqual(calculateFollowScroll({ ...base, scrollLeft: 9000, scrollTop: 9200, playerCenterX: 10_000, playerCenterY: 10_000 }), { left: 9000, top: 9200 })
 })
+
+test('camera remains at the origin when the map is smaller than the viewport', () => {
+  const target = calculateFollowScroll({
+    scrollLeft: 50, scrollTop: 50, viewportWidth: 1200, viewportHeight: 900,
+    contentWidth: 600, contentHeight: 500, playerCenterX: 300, playerCenterY: 250,
+  })
+  assert.deepEqual(target, { left: 0, top: 0 })
+})

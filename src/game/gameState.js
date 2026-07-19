@@ -24,7 +24,7 @@ export function createNewRun(characterCreation, options = {}) {
   const seed = options.seed ?? createRunSeed()
   const now = options.now?.() ?? new Date().toISOString()
   const runId = options.runId ?? globalThis.crypto?.randomUUID?.() ?? `run-${Date.now()}`
-  const map = generateMeadowsRegion(seed)
+  const map = options.map ?? generateMeadowsRegion(seed)
   const start = map.tiles[map.startIndex]
   const discovered = []
   for (let rowOffset = -2; rowOffset <= 2; rowOffset += 1) {
@@ -70,6 +70,8 @@ export function createNewRun(characterCreation, options = {}) {
 export function updateRunProgress(run, progress) {
   return {
     ...run,
+    seed: typeof progress.seed === 'string' && progress.seed ? progress.seed : run.seed,
+    regionId: progress.regionId ?? run.regionId,
     playerPosition: { ...progress.playerPosition },
     time: { ...progress.time },
     discovered: [...progress.discovered],

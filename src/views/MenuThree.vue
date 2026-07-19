@@ -1,6 +1,9 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowReactive } from 'vue'
-import { findPath, generateMeadowsRegion, MEADOWS_GENERATION_CONFIG, POI, poiIcons, terrainDetails, terrainIcons } from '../data/maps.js'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowReactive, toRaw } from 'vue'
+import { findPath, generateMeadowsRegion, MEADOWS_GENERATION_CONFIG, POI, terrainDetails } from '../data/maps.js'
+import { createWorldMapPresentation } from '../world/worldTilePresentation.js'
+import { initializeWorldSession } from '../world/worldSession.js'
+import { canPlayerEnterTile, resolveMovementIntent } from '../world/worldMovement.js'
 import { calculateTileTravelTime } from '../data/travelConfig.js'
 import { getWorldClock, getWorldPeriod, WORLD_PERIOD } from '../world/worldClock.js'
 import { getNightThreat } from '../world/nightThreatService.js'
@@ -10,7 +13,7 @@ import { checkNightEncounter } from '../world/nightEncounterService.js'
 import { canWaitThroughNight } from '../world/wardwoodEconomy.js'
 import { WardwoodService } from '../world/wardwoodService.js'
 import { waitUntilMorningProtected } from '../world/nightProtectionService.js'
-import { STATIC_POI_CONFIG, STATIC_POI_ICONS } from '../data/staticPoiConfig.js'
+import { STATIC_POI_CONFIG } from '../data/staticPoiConfig.js'
 import { calculateFollowScroll } from '../utils/camera.js'
 import EventModal from '../components/EventModal.vue'
 import CombatView from '../components/CombatView.vue'
@@ -19,6 +22,7 @@ import ItemTooltip from '../components/ItemTooltip.vue'
 import PoiInteractionOverlay from '../components/PoiInteractionOverlay.vue'
 import EncounterOverlay from '../components/EncounterOverlay.vue'
 import RegionStatePanel from '../components/RegionStatePanel.vue'
+import WorldTileLayers from '../components/WorldTileLayers.vue'
 import DialogueOverlay from '../components/DialogueOverlay.vue'
 import QuestPanels from '../components/QuestPanels.vue'
 import { DialogueDatabase } from '../dialogue/dialogueDatabase.js'
@@ -134,18 +138,20 @@ const props = defineProps({
     required: true,
   },
   run: { type: Object, required: true },
+  worldMap: { type: Object, default: null },
 })
 
 const emit = defineEmits(['ready', 'save-state', 'main-menu', 'new-run'])
 
-const currentSeed = ref(props.run.seed)
+const rawRun = toRaw(props.run)
+const initialWorldSession = initializeWorldSession(rawRun, props.worldMap ? () => toRaw(props.worldMap) : generateMeadowsRegion)
+if (!initialWorldSession.ok) throw new Error(`World initialization failed: ${initialWorldSession.reason}`)
+if (initialWorldSession.usedFallback && import.meta.env.DEV) console.warn('Saved player position was invalid; using the Meadows start position.')
+const currentSeed = ref(initialWorldSession.seed)
 // The map contains 10,000 tiles. Deeply proxying every tile can block the first
 // render when Menu 3 is opened, so only the map's top-level properties are reactive.
-const meadowsMap = shallowReactive(generateMeadowsRegion(currentSeed.value))
-const initialPlayerPosition = {
-  row: props.run.playerPosition.row,
-  column: props.run.playerPosition.column,
-}
+const meadowsMap = shallowReactive(initialWorldSession.map)
+const initialPlayerPosition = initialWorldSession.position
 
 const showMapIntro = ref(true)
 const loadingProgress = ref(0)
@@ -158,6 +164,7 @@ const devToolsCategory = ref('all')
 const devToolsMenu = ref(null)
 const visibleDevToolCount = ref(0)
 const showCoordinates = ref(false)
+const showTileGrid = ref(false)
 const showPointsOfInterest = ref(false)
 const showBiomeColors = ref(true)
 const showBlockedTiles = ref(false)
@@ -235,24 +242,24 @@ let viewportAnimationFrame = null
 const dragStart = { x: 0, y: 0, scrollLeft: 0, scrollTop: 0 }
 let didDragMap = false
 const playerPosition = ref(initialPlayerPosition)
-const exploredTiles = reactive(new Set(props.run.discovered))
-const visitedTiles = reactive(new Set(props.run.visited))
-const timeState = ref({ ...props.run.time })
-const poiDiscovery = reactive({ ...(props.run.poiDiscovery ?? {}) })
-const poiState = reactive(structuredClone(props.run.poiState ?? { version: 1, instances: [] }))
+const exploredTiles = reactive(new Set(rawRun.discovered))
+const visitedTiles = reactive(new Set(rawRun.visited))
+const timeState = ref({ ...rawRun.time })
+const poiDiscovery = reactive({ ...(rawRun.poiDiscovery ?? {}) })
+const poiState = reactive(structuredClone(rawRun.poiState ?? { version: 1, instances: [] }))
 const poiRevision = ref(0)
 const poiRepository = new PoiRepository(poiState)
 const poiService = new PoiService({ database: poiDatabase, repository: poiRepository, onChange: (state) => { poiState.version = state.version; poiState.instances.splice(0, poiState.instances.length, ...state.instances); poiRevision.value += 1; saveProgress() } })
-const encounterStateRepository = new EncounterStateRepository(props.run.encounterState)
-const worldEventStateRepository = new WorldEventStateRepository(props.run.worldEventRuntime)
+const encounterStateRepository = new EncounterStateRepository(rawRun.encounterState)
+const worldEventStateRepository = new WorldEventStateRepository(rawRun.worldEventRuntime)
 const worldEventProcessingService = new WorldEventProcessingService({ database: worldEventDatabase, repository: worldEventStateRepository })
 const worldEventDebugView = ref(null)
 const debugWorldEventId = ref(worldEventDatabase.getAll()[0]?.id ?? '')
 function applyWorldEventProcessingResults(processed) { const context = { worldDay: timeState.value.day, worldTime: { hour: timeState.value.hour, minute: timeState.value.minute ?? 0 }, randomSource: () => Number(debugEncounterRandom?.value ?? 0.5) }; const effects = []; for (const result of processed?.results ?? []) { if (result?.code === 'WORLD_EVENT_ACTIVATED_PENDING_EFFECTS') effects.push(worldEventEffectExecutor.applyPendingWorldEventEffects(result.instance.instanceId, context)); if (result?.code === 'WORLD_EVENT_EXPIRED_PENDING_CLEANUP') effects.push(worldEventEffectExecutor.revertWorldEventEffects(result.instance.instanceId, context)) } regionStateRevision.value += 1; return effects }
 function worldEventSignal(type, changes = {}) { const signal = { signalId: `debug-${type}-${worldEventStateRepository.worldState.processingSequenceCounter + 1}`, triggerType: type, worldDay: timeState.value.day, worldTime: { hour: timeState.value.hour, minute: timeState.value.minute ?? 0 }, regionId: meadowsMap.id, ...changes }; worldEventDebugView.value = worldEventProcessingService.processSignal(signal, { characterState }); applyWorldEventProcessingResults(worldEventDebugView.value); saveProgress(); return worldEventDebugView.value }
 function processWorldEventsForCurrentTime() { worldEventDebugView.value = worldEventProcessingService.processTime(timeState.value.day, { hour: timeState.value.hour, minute: timeState.value.minute ?? 0 }); applyWorldEventProcessingResults(worldEventDebugView.value); npcScheduleProcessing.invalidateAll(); processNpcSchedules(); return worldEventDebugView.value }
-const encounterSelectionService = new EncounterSelectionService({ database: encounterDatabase, stateRepository: encounterStateRepository, runSeed: props.run.seed })
-const travelEncounterService = new TravelEncounterService({ selectionService: encounterSelectionService, travelState: encounterStateRepository.state.travelState, runSeed: props.run.seed })
+const encounterSelectionService = new EncounterSelectionService({ database: encounterDatabase, stateRepository: encounterStateRepository, runSeed: rawRun.seed })
+const travelEncounterService = new TravelEncounterService({ selectionService: encounterSelectionService, travelState: encounterStateRepository.state.travelState, runSeed: rawRun.seed })
 const debugEncounterId = ref(encounterDatabase.getAllEncounters()[0]?.id ?? '')
 const debugEncounterTableId = ref(encounterDatabase.getAllTables()[0]?.id ?? '')
 const debugEncounterChoiceId = ref('fight')
@@ -289,8 +296,8 @@ function debugActiveEncounter() { return encounterStateRepository.instances.get(
 function debugActivateEncounter(random = () => Number(debugEncounterRandom.value)) { const instance = debugActiveEncounter(); debugEncounterView.value = instance ? encounterDetectionService.activatePendingEncounter(instance.instanceId, encounterInteractionContext(random)) : { ok: false, code: 'ENCOUNTER_NOT_PENDING' }; saveProgress() }
 function debugEncounterChoice(execute = false) { const instance = debugActiveEncounter(); debugEncounterView.value = instance ? (execute ? encounterChoiceService.execute(instance.instanceId, debugEncounterChoiceId.value, encounterInteractionContext()) : encounterChoiceService.preview(instance.instanceId, debugEncounterChoiceId.value, encounterInteractionContext())) : { ok: false, code: 'ENCOUNTER_NOT_PENDING' }; presentEncounterLoot(debugEncounterView.value, instance?.instanceId); saveProgress() }
 function debugEncounterPresentation() { const instance = debugActiveEncounter(); debugEncounterView.value = instance ? createEncounterPresentationModel(instance, encounterDatabase.getEncounter(instance.encounterDefinitionId), encounterChoiceAvailabilityResolver, encounterInteractionContext()) : null }
-const characterState = reactive(restoreCharacterState(props.run.characterState, createCharacterState({
-  id: `character-${props.run.runId}`,
+const characterState = reactive(restoreCharacterState(rawRun.characterState, createCharacterState({
+  id: `character-${rawRun.runId}`,
   name: 'Hero',
 })))
 const equipmentManager = new EquipmentManager(characterState)
@@ -305,15 +312,15 @@ const craftingMessage = ref('')
 const knownRecipes = computed(() => recipeUnlockService.getKnownRecipes().filter((recipe) => !recipeSearch.value || `${recipe.displayName} ${recipe.description}`.toLocaleLowerCase().includes(recipeSearch.value.toLocaleLowerCase())).filter((recipe) => !recipeCategory.value || recipe.category === recipeCategory.value))
 const selectedRecipePreview = computed(() => selectedRecipeId.value ? craftingService.preview(selectedRecipeId.value, 1, { stationType: recipeStation.value }) : null)
 function craftRecipe(quantity) { const context = { stationType: recipeStation.value }; const result = quantity === 'max' ? craftingService.craftMax(selectedRecipeId.value, context) : craftingService.craft(selectedRecipeId.value, quantity, context); craftingMessage.value = result.message ?? result.blockers?.[0]?.message ?? result.code; if (result.ok) saveProgress() }
-const salvageService = new SalvageService({ character: characterState, inventoryManager, randomSource: createSalvageRandomSource(props.run.seed), getWorldTime: () => ({ day: timeState.value.day, hour: timeState.value.hour }) })
+const salvageService = new SalvageService({ character: characterState, inventoryManager, randomSource: createSalvageRandomSource(rawRun.seed), getWorldTime: () => ({ day: timeState.value.day, hour: timeState.value.hour }) })
 const wardwoodService = new WardwoodService(characterState, inventoryManager)
 wardwoodService.expire(timeState.value.day)
 const poiDiscoveryService = new PoiDiscoveryService({ poiService })
 const poiActionService = new PoiActionService({ poiService })
 let poiDebugRandom = () => 0.5
 function currentPoiContext() { const contextInstance = poiRepository.get(activePoiInstanceId.value ?? debugPoiInstanceId.value); return createPoiInteractionContext({ poiInstanceId: contextInstance?.instanceId, character: characterState, locationId: contextInstance?.locationId, regionId: contextInstance?.regionId, worldPosition: playerPosition.value, worldDay: timeState.value.day, worldTime: timeState.value.hour, isInCombat: Boolean(combatSnapshot.value?.worldBlocked), isNight: getWorldPeriod(timeState.value) === WORLD_PERIOD.NIGHT, characterStats: calculatedCharacter.value, proficiencyState: characterState.proficiencySkills, inventoryManager, wardwoodService, knownKnowledgeIds: characterState.discoveredKnowledge, controlledRandomSource: () => poiDebugRandom(), advanceWorldTime: (minutes) => { timeState.value = advanceTime(timeState.value, { minutes, countMove: false, reason: 'poi-action' }); return { ok: true } } }) }
-const merchantState = reactive(JSON.parse(JSON.stringify(props.run.merchantState ?? generateMerchantState(props.run.seed, props.run.runId))))
-const merchantService = new MerchantService({ character: characterState, inventoryManager, merchantState, wardwoodService, runId: props.run.runId, seed: props.run.seed, getWorldTime: () => ({ day: timeState.value.day, hour: timeState.value.hour }) })
+const merchantState = reactive(JSON.parse(JSON.stringify(rawRun.merchantState ?? generateMerchantState(rawRun.seed, rawRun.runId))))
+const merchantService = new MerchantService({ character: characterState, inventoryManager, merchantState, wardwoodService, runId: rawRun.runId, seed: rawRun.seed, getWorldTime: () => ({ day: timeState.value.day, hour: timeState.value.hour }) })
 const activeMerchantId = ref(null)
 const merchantSearch = ref('')
 const merchantFilter = ref('')
@@ -547,12 +554,12 @@ const encounterResolutionService = new EncounterResolutionService({ database: en
 const encounterCombatService = new EncounterCombatService({ database: encounterDatabase, stateRepository: encounterStateRepository, resolutionService: encounterResolutionService, startCombat: (context) => { const started = combatManager.startCombat({ character: characterState, enemyTemplateId: context.combatDefinitionId, initiator: context.initiator === 'enemy' ? COMBAT_INITIATOR.ENEMY : COMBAT_INITIATOR.PLAYER, source: { type: 'encounter', id: context.encounterInstanceId }, preparationModifiers: context }); return started.ok ? { ok: true, combatId: started.combat.id } : { ok: false, code: started.error } } })
 const encounterNonCombatService = new EncounterNonCombatService({ stateRepository: encounterStateRepository, resolutionService: encounterResolutionService })
 const encounterChoiceAvailabilityResolver = new EncounterChoiceAvailabilityResolver()
-const encounterChoiceService = new EncounterChoiceService({ stateRepository: encounterStateRepository, availabilityResolver: encounterChoiceAvailabilityResolver, combatService: encounterCombatService, nonCombatService: encounterNonCombatService, resolutionService: encounterResolutionService, runSeed: props.run.seed })
-const encounterDetectionService = new EncounterDetectionService({ database: encounterDatabase, stateRepository: encounterStateRepository, runSeed: props.run.seed })
+const encounterChoiceService = new EncounterChoiceService({ stateRepository: encounterStateRepository, availabilityResolver: encounterChoiceAvailabilityResolver, combatService: encounterCombatService, nonCombatService: encounterNonCombatService, resolutionService: encounterResolutionService, runSeed: rawRun.seed })
+const encounterDetectionService = new EncounterDetectionService({ database: encounterDatabase, stateRepository: encounterStateRepository, runSeed: rawRun.seed })
 const encounterNotificationService = new NotificationService()
 const worldEventEffectExecutor = new WorldEventEffectExecutor({ database: worldEventDatabase, repository: worldEventStateRepository, lifecycle: worldEventProcessingService.lifecycle, processingService: worldEventProcessingService, poiService, poiDiscoveryService, merchantService, notificationService: encounterNotificationService })
 const dialogueDatabase = new DialogueDatabase(dialogueDefinitions, Object.keys(DIALOGUE_NPCS))
-const dialogueRepository = new DialogueRepository(props.run.dialogueRuntime)
+const dialogueRepository = new DialogueRepository(rawRun.dialogueRuntime)
 const dialogueNpcStates = reactive(Object.fromEntries(Object.keys(DIALOGUE_NPCS).map((id) => [id, { metPlayer: false, localFlags: {}, localCounters: {} }])))
 const dialogueView = ref(null)
 const dialogueBusy = ref(false)
@@ -560,7 +567,7 @@ const dialogueExternalActions = new DialogueExternalActionService({ OpenMerchant
 const dialogueEffectExecutor = new DialogueEffectExecutor({ notifications: encounterNotificationService, poiDiscovery: poiDiscoveryService, worldEvents: { trigger: (eventId) => worldEventSignal('Manual', { targetId: eventId }) } })
 const dialogueService = new DialogueSessionService({ database: dialogueDatabase, repository: dialogueRepository, effectExecutor: dialogueEffectExecutor, externalActions: dialogueExternalActions })
 const questDatabase = new QuestDatabase(questDefinitions)
-const questRepository = new QuestRepository(props.run.questRuntime)
+const questRepository = new QuestRepository(rawRun.questRuntime)
 const questRevision = ref(0)
 const questLogOpen = ref(false)
 const questEffectExecutor = new QuestEffectExecutor({ notifications: encounterNotificationService, poiDiscovery: poiDiscoveryService, worldEvents: { trigger: (eventId) => worldEventSignal('Manual', { targetId: eventId }) } })
@@ -568,7 +575,7 @@ const questService = new QuestService({ database: questDatabase, repository: que
 const questLogModel = computed(() => { void questRevision.value; return createQuestLogViewModel(questDatabase, questRepository) })
 const questTrackerModel = computed(() => { void questRevision.value; return createQuestTrackerViewModel(questDatabase, questRepository) })
 const npcScheduleDatabase = new NpcScheduleDatabase(npcScheduleDefinitions, Object.keys(NPC_ASSIGNMENTS), SCHEDULE_LOCATIONS)
-const npcScheduleRepository = new NpcScheduleRepository(props.run.npcScheduleRuntime)
+const npcScheduleRepository = new NpcScheduleRepository(rawRun.npcScheduleRuntime)
 const npcScheduleModifiers = new NpcScheduleRuntimeModifierService(npcScheduleRepository)
 const npcScheduleResolver = new NpcScheduleResolver({ database:npcScheduleDatabase, repository:npcScheduleRepository, assignments:NPC_ASSIGNMENTS, modifierService:npcScheduleModifiers, poiService })
 const npcScheduleProcessing = new NpcScheduleProcessingService({ database:npcScheduleDatabase, repository:npcScheduleRepository, resolver:npcScheduleResolver, modifierService:npcScheduleModifiers })
@@ -695,6 +702,8 @@ const visibleTiles = computed(() => {
 
   return tiles
 })
+const worldTilePresentations = computed(() => createWorldMapPresentation(meadowsMap, mapTileSize.value, currentSeed.value))
+const mapGridVisible = computed(() => showTileGrid.value || showCoordinates.value || showSectorGrid.value)
 const selectedTile = computed(() => {
   if (selectedTileIndex.value === null) return null
   const index = selectedTileIndex.value
@@ -824,7 +833,8 @@ function isAdjacentTile(index) {
 }
 
 function isTilePassable(index) {
-  return meadowsMap.tiles[index].walkable
+  const tile = meadowsMap.tiles[index]
+  return canPlayerEnterTile(meadowsMap, tile?.row, tile?.column)
 }
 
 function canMoveTo(index) {
@@ -1035,22 +1045,13 @@ function movePlayerBy(deltaRow, deltaColumn) {
   if (encounterStateRepository.state.travelState.movementBlockedByEncounter) { encounterUiMessage.value = 'Resolve the active encounter before moving.'; return }
   if (activePoiInstanceId.value) return
   if (characterState.activeLightSource?.type === LIGHT_SOURCE_TYPE.CAMPFIRE && characterState.activeLightSource.enabled) { trainingMessage.value = 'Extinguish the Campfire before moving.'; return }
-  const nextRow = playerPosition.value.row + deltaRow
-  const nextColumn = playerPosition.value.column + deltaColumn
-
-  if (
-    nextRow < 0 ||
-    nextRow >= meadowsMap.rows ||
-    nextColumn < 0 ||
-    nextColumn >= meadowsMap.columns
-  ) return
-
-  const nextIndex = nextRow * meadowsMap.columns + nextColumn
-  if (!isTilePassable(nextIndex)) return
+  const movement = resolveMovementIntent(meadowsMap, playerPosition.value, deltaRow, deltaColumn)
+  if (!movement.moved) return
+  const nextIndex = movement.position.row * meadowsMap.columns + movement.position.column
 
   const previousPosition = { ...playerPosition.value }
   const previousTime = { ...timeState.value }
-  playerPosition.value = { row: nextRow, column: nextColumn }
+  playerPosition.value = movement.position
   visitedTiles.add(nextIndex)
   meadowsMap.tiles[nextIndex].visited = true
   revealTilesAroundPlayer()
@@ -1068,6 +1069,8 @@ function movePlayerBy(deltaRow, deltaColumn) {
 function saveProgress() {
   if (combatSnapshot.value.worldBlocked) return false
   emit('save-state', {
+    seed: currentSeed.value,
+    regionId: meadowsMap.id,
     playerPosition: { ...playerPosition.value },
     time: { ...timeState.value },
     discovered: [...exploredTiles],
@@ -1080,7 +1083,7 @@ function saveProgress() {
     questRuntime: questRepository.serialize(),
     npcScheduleRuntime: npcScheduleRepository.serialize(),
     characterState: cloneCharacterState(characterState),
-    merchantState: structuredClone(merchantState),
+    merchantState: structuredClone(toRaw(merchantState)),
   })
   return true
 }
@@ -1780,6 +1783,7 @@ onBeforeUnmount(() => {
         <button type="button" @click="showStartPosition = !showStartPosition">Start Position: {{ showStartPosition ? 'On' : 'Off' }}</button>
         <button type="button" @click="showBossPosition = !showBossPosition">Boss Position: {{ showBossPosition ? 'On' : 'Off' }}</button>
         <button type="button" @click="showSectorGrid = !showSectorGrid">Sector Grid: {{ showSectorGrid ? 'On' : 'Off' }}</button>
+        <button type="button" data-dev-category="world" @click="showTileGrid = !showTileGrid">Tile Grid: {{ showTileGrid ? 'On' : 'Off' }}</button>
         <button type="button" @click="showEdgeZone = !showEdgeZone">Edge Zone: {{ showEdgeZone ? 'On' : 'Off' }}</button>
         <button type="button" @click="showSectorStats = !showSectorStats">Sector Counts: {{ showSectorStats ? 'On' : 'Off' }}</button>
         <button type="button" @click="showEmptySectors = !showEmptySectors">Empty Sectors: {{ showEmptySectors ? 'On' : 'Off' }}</button>
@@ -1866,7 +1870,7 @@ onBeforeUnmount(() => {
         >
           <div
             class="map-canvas"
-            :class="{ 'map-canvas--no-biomes': !showBiomeColors }"
+            :class="{ 'map-canvas--no-biomes': !showBiomeColors, 'map-canvas--grid': mapGridVisible }"
             :style="{
               width: `${meadowsMap.columns * mapTileSize}px`,
               height: `${meadowsMap.rows * mapTileSize}px`,
@@ -1923,6 +1927,7 @@ onBeforeUnmount(() => {
               @pointermove="showTileTooltip(tile, $event)"
               @pointerleave="hideTileTooltip"
             >
+              <WorldTileLayers :presentation="worldTilePresentations[tile.index]" />
               <span v-if="showCoordinates" class="tile-coordinate" aria-hidden="true">
                 {{ tile.column + 1 }},{{ tile.row + 1 }}
               </span>
@@ -1931,21 +1936,12 @@ onBeforeUnmount(() => {
                 {{ character.icon }}
               </span>
               <button v-if="poiMarkerByTile.get(tile.index)" type="button" class="poi-framework-marker" :class="[`poi-framework-marker--${poiMarkerByTile.get(tile.index).status.toLowerCase().replaceAll(' ', '-')}`, { 'poi-framework-marker--safe': poiMarkerByTile.get(tile.index).isSafeZone }]" :title="poiMarkerByTile.get(tile.index).optionalTooltip" :aria-label="poiMarkerByTile.get(tile.index).optionalTooltip" @click.stop="openPoi(poiMarkerByTile.get(tile.index).instanceId)"><span aria-hidden="true">{{ poiMarkerByTile.get(tile.index).isSafeZone ? '⌂' : poiMarkerByTile.get(tile.index).status === 'Exhausted' ? '◇' : '◆' }}</span><small>{{ poiMarkerByTile.get(tile.index).status }}</small></button>
-              <span v-else-if="(!fogEnabled || isTileExplored(tile.index)) && (!getPoiState(tile) || isPoiIdentityVisible(tile))" aria-hidden="true">{{ terrainIcons[tile.terrain] }}</span>
               <span
                 v-if="getPoiState(tile) === POI_DISCOVERY_STATE.DETECTED"
                 class="poi-token poi-token--detected"
                 title="Unknown point of interest"
               >
                 ?
-              </span>
-              <span
-                v-else-if="isPoiIdentityVisible(tile)"
-                class="poi-token"
-                :class="{ 'static-poi-token': tile.staticPoiId }"
-                :title="tile.staticPoiId ? staticPoiById.get(tile.staticPoiId)?.type : tile.pointOfInterest"
-              >
-                {{ tile.staticPoiId ? STATIC_POI_ICONS[staticPoiById.get(tile.staticPoiId)?.category] : (poiIcons[tile.pointOfInterest] ?? '•') }}
               </span>
             </div>
           </div>
@@ -2374,11 +2370,17 @@ onBeforeUnmount(() => {
 
 .dev-controls__menu {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(11rem, 100%), 1fr));
+  grid-auto-rows: minmax(2.75rem, auto);
   align-content: start;
+  align-items: stretch;
   gap: 0.45rem;
   padding: 1rem;
   overflow-y: auto;
+}
+
+.dev-controls__menu > * {
+  min-width: 0;
 }
 
 .dev-controls__menu > small,
@@ -2427,6 +2429,9 @@ onBeforeUnmount(() => {
 
 .dev-controls button,
 .dev-tools-window button {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.75rem;
   padding: 0.45rem 0.65rem;
   border: 1px solid #64748b;
   border-radius: 0.4rem;
@@ -2434,7 +2439,10 @@ onBeforeUnmount(() => {
   color: #e2e8f0;
   font-size: 0.75rem;
   font-weight: 800;
+  line-height: 1.25;
   text-align: left;
+  overflow-wrap: anywhere;
+  white-space: normal;
   transition: background-color 120ms ease, border-color 120ms ease;
 }
 
@@ -2470,6 +2478,24 @@ onBeforeUnmount(() => {
   text-align: center;
 }
 
+.dev-controls__menu > select,
+.dev-controls__menu > input {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #64748b;
+  border-radius: 0.4rem;
+  background: #020617;
+  color: #f8fafc;
+}
+
+.dev-controls__menu > pre {
+  grid-column: 1 / -1;
+  max-width: 100%;
+  overflow: auto;
+}
+
 .game-screen{display:block;min-height:100vh;overflow:hidden}.player-panel{position:fixed;z-index:40;top:5.5rem;left:1rem;width:min(15rem,calc(100vw - 2rem));max-height:calc(100vh - 12rem);overflow:auto;padding:1rem;border:1px solid #64748b;border-radius:.75rem;background:rgb(15 23 42 / 92%);backdrop-filter:blur(8px);box-shadow:0 1rem 3rem #0009}.player-panel .game-navigation,.player-panel .time-actions{display:none}.player-header{padding-bottom:.75rem}.player-icon{width:2.7rem;height:2.7rem;font-size:1.4rem}.resource-section{gap:.7rem;margin-top:.9rem}.resource-fill--xp{background:linear-gradient(90deg,#92400e,#fbbf24)}.hud-weapon{padding:.55rem;border:1px solid #475569;border-radius:.4rem;background:#020617;font-weight:800}.dev-controls{position:static;margin-top:1rem}.map-section{min-height:100vh;padding:.5rem}.map-frame{height:calc(100vh - 1rem)}.map-header{padding-left:17rem}.hud-action-bar{position:fixed;z-index:80;right:50%;bottom:1rem;display:flex;gap:.45rem;padding:.5rem;border:1px solid #64748b;border-radius:.7rem;background:rgb(2 6 23 / 94%);box-shadow:0 .8rem 2rem #000;transform:translateX(50%);backdrop-filter:blur(8px)}.hud-action-bar button{display:flex;align-items:center;gap:.4rem;padding:.5rem .7rem;border:1px solid #475569;border-radius:.4rem;background:#111827;color:#e2e8f0;cursor:pointer}.hud-action-bar button.active{border-color:#fbbf24;background:#78350f;color:#fff}.hud-action-bar kbd{display:grid;min-width:1.7rem;height:1.7rem;place-items:center;border:1px solid #94a3b8;border-radius:.25rem;background:#020617;font-weight:900}.hud-panel-backdrop{position:fixed;z-index:70;inset:0;display:grid;place-items:center;padding:4rem 1rem 6rem;background:rgb(2 6 23 / 38%);backdrop-filter:blur(2px)}.hud-panel{width:min(58rem,100%);max-height:100%;overflow:hidden;border:1px solid #64748b;border-radius:.8rem;background:rgb(11 18 32 / 97%);box-shadow:0 2rem 5rem #000}.hud-panel>header{display:flex;align-items:center;justify-content:space-between;padding:1rem 1.2rem;border-bottom:1px solid #334155;background:#111827}.hud-panel>header small{color:#a5b4fc;text-transform:uppercase}.hud-panel>header h2{font-size:1.5rem;font-weight:900}.hud-panel>header button{padding:.4rem .65rem;border:1px solid #64748b;border-radius:.35rem;background:#1e293b;color:#fff}.hud-panel__content{max-height:calc(100vh - 13rem);overflow:auto;padding:1rem}.hud-panel__content section{padding:1rem;border:1px solid #334155;border-radius:.55rem;background:#0f172a}.hud-panel__content h3{margin-bottom:.7rem;color:#fbbf24;font-weight:900}.hud-panel__content article{padding:.65rem 0;border-bottom:1px solid #334155}.panel-columns,.character-sheet{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}.character-sheet dl,.item-details dl{display:grid;grid-template-columns:repeat(2,1fr);gap:.45rem}.character-sheet dl div,.item-details dl div{padding:.5rem;background:#020617}.equipment-slot{display:flex;width:100%;justify-content:space-between;margin:.35rem 0;padding:.65rem;border:1px solid #334155;border-radius:.35rem;background:#020617;color:#e2e8f0}.equipment-slot.filled{border-color:#818cf8}.hud-panel-enter-active,.hud-panel-leave-active{transition:opacity .16s ease}.hud-panel-enter-from,.hud-panel-leave-to{opacity:0}
 
 .equipment-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.65rem}.equipment-grid .equipment-slot{display:grid;grid-template-columns:1fr;gap:.25rem;min-height:8.5rem;margin:0;padding:.45rem;text-align:center}.equipment-grid .equipment-slot.selected{border-color:#fbbf24;box-shadow:0 0 0 2px #92400e}.equipment-slot__image{display:grid;height:5.5rem;place-items:center;overflow:hidden;border:1px solid #334155;border-radius:.3rem;background:linear-gradient(145deg,#111827,#020617)}.equipment-slot__image img{width:100%;height:100%;object-fit:cover}.equipment-slot__image i{color:#64748b;font-size:2.4rem;font-style:normal}.equipment-slot.filled .equipment-slot__image{border-color:#22c55e;background:radial-gradient(circle,#173c25,#020617)}.equipment-slot small{overflow:hidden;color:#94a3b8;font-size:.65rem;text-overflow:ellipsis;white-space:nowrap}.proficiency-category{margin:.5rem 0;border:1px solid #334155;border-radius:.4rem;background:#020617}.proficiency-category summary{display:flex;justify-content:space-between;padding:.7rem;cursor:pointer}.proficiency-category summary span{color:#94a3b8}.proficiency-category article{padding:.65rem .8rem}.equipment-summary{grid-column:1/-1;min-height:max-content}.equipment-summary__list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.45rem}.equipment-summary__list span{display:flex;flex-direction:column;padding:.5rem;border:1px solid #334155;border-radius:.35rem;background:#020617;color:#94a3b8}.equipment-summary__list b{color:#e2e8f0}.character-sheet{padding-bottom:3rem}
@@ -2480,8 +2506,35 @@ onBeforeUnmount(() => {
 .knowledge-notification{position:fixed;z-index:275;top:1rem;right:1rem;width:min(24rem,calc(100vw - 2rem));padding:1rem 2.5rem 1rem 1rem;border:1px solid #a78bfa;border-radius:.6rem;background:#1e1b4b;color:#ede9fe;box-shadow:0 1rem 3rem #000}.knowledge-notification>strong{color:#c4b5fd;text-transform:uppercase}.knowledge-notification h3{margin:.35rem 0;font-size:1.2rem;font-weight:900}.knowledge-notification small{display:block;margin-top:.6rem;color:#ddd6fe}.knowledge-notification button{position:absolute;top:.35rem;right:.45rem;border:0;background:transparent;color:#fff;font-size:1.2rem}
 
 @media (max-width: 760px) {
+  .dev-tools-backdrop {
+    padding: 0.5rem;
+  }
+
+  .dev-tools-window {
+    width: calc(100vw - 1rem);
+    max-height: calc(100vh - 1rem);
+  }
+
   .dev-tools-filter {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .dev-tools-filter__count,
+  .dev-tools-filter__clear {
+    align-self: stretch;
+  }
+
+  .dev-controls__menu {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 0.65rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .dev-tools-filter,
+  .dev-controls__menu,
+  .dev-enemy-picker {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -2773,7 +2826,7 @@ onBeforeUnmount(() => {
   background: #000000;
 }
 
-.map-canvas--no-biomes .map-tile:not(.map-tile--hidden) {
+.map-canvas--no-biomes .map-tile:not(.map-tile--hidden) :deep(.world-layer--ground) {
   background: #334155 !important;
 }
 
@@ -2783,12 +2836,17 @@ onBeforeUnmount(() => {
   width: var(--tile-size);
   height: var(--tile-size);
   place-items: center;
-  border: 1px solid rgb(15 23 42 / 55%);
+  border: 1px solid transparent;
   color: #d1fae5;
   font-size: 2rem;
   text-shadow: 0 2px 4px #000000;
+  image-rendering: pixelated;
   contain: strict;
   content-visibility: auto;
+}
+
+.map-canvas--grid .map-tile {
+  border-color: rgb(15 23 42 / 55%);
 }
 
 .tile-coordinate {
@@ -2833,21 +2891,20 @@ onBeforeUnmount(() => {
   color: #ffffff !important;
 }
 
-.poi-token--detected {
-  border-color: #f8fafc;
-  background: #1e293b;
-  color: #ffffff;
-  font-weight: 1000;
+.map-tile.map-tile--hidden :deep(.world-layer) {
+  visibility: hidden;
 }
 
 .map-tile.map-tile--explored {
-  border-color: #26352a;
+  border-color: transparent;
   color: #94a39a;
   box-shadow: inset 0 0 0 999px rgb(71 85 75 / 52%);
   filter: none !important;
 }
 
 .player-token {
+  position: relative;
+  z-index: 8;
   display: grid;
   width: 65%;
   height: 65%;
@@ -2855,8 +2912,12 @@ onBeforeUnmount(() => {
   border: 3px solid #fde68a;
   border-radius: 50%;
   background: #1e293b;
-  font-size: calc(var(--tile-size) * 0.38);
+  font-size: calc(var(--tile-size) * .38);
   box-shadow: 0 5px 12px rgb(0 0 0 / 65%);
+}
+
+.map-canvas--grid .map-tile.map-tile--explored {
+  border-color: #26352a;
 }
 
 .poi-token {
@@ -2878,6 +2939,22 @@ onBeforeUnmount(() => {
   border-color: #c4b5fd;
   background: #312e81;
   color: #f5f3ff;
+}
+
+.poi-token.poi-token--detected {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 4px dashed #f8fafc;
+  border-radius: 0;
+  background: rgb(30 41 59 / 82%);
+  color: #ffffff;
+  font-size: calc(var(--tile-size) * 0.62);
+  font-weight: 1000;
+  line-height: 1;
+  text-shadow: 0 3px 8px #000000;
+  box-shadow: inset 0 0 18px rgb(129 140 248 / 55%);
+  pointer-events: none;
 }
 
 .map-tile--debug-blocked {

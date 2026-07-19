@@ -1,9 +1,10 @@
 <script setup>
-import { computed, nextTick, onErrorCaptured, ref } from 'vue'
+import { computed, nextTick, onErrorCaptured, ref, shallowRef } from 'vue'
 import MainMenu from './views/MainMenu.vue'
 import MenuTwo from './views/MenuTwo.vue'
 import MenuThree from './views/MenuThree.vue'
-import { createNewRun, updateRunProgress } from './game/gameState.js'
+import { createNewRun, createRunSeed, updateRunProgress } from './game/gameState.js'
+import { generateMeadowsRegion } from './world/meadowsGenerator.js'
 import { createRandomCharacterCreation } from './game/characterCreation.js'
 import { readSave, removeSave, writeSave } from './game/saveService.js'
 
@@ -11,6 +12,7 @@ const initialSaveResult = readSave()
 const currentView = ref('main-menu')
 const selectedCharacter = ref(null)
 const activeRun = ref(initialSaveResult.status === 'valid' ? initialSaveResult.save : null)
+const activeWorldMap = shallowRef(initialSaveResult.status === 'valid' ? initialSaveResult.map : null)
 const saveStatus = ref(initialSaveResult.status)
 const saveMessage = ref(initialSaveResult.status === 'invalid' ? 'invalid-save' : '')
 const isOpeningMap = ref(false)
@@ -59,9 +61,10 @@ function deleteBrokenSave() {
   } else saveMessage.value = 'Save could not be deleted because browser storage is unavailable.'
 }
 
-async function openMenuThree(run) {
+async function openMenuThree(run, map) {
   selectedCharacter.value = { id: run.characterState.id, name: run.characterState.name, icon: '⚔️' }
   activeRun.value = run
+  activeWorldMap.value = map
   mapError.value = ''
   isOpeningMap.value = true
   currentView.value = 'map-loading'
@@ -74,12 +77,14 @@ async function createRunForCharacter(characterCreation) {
   if (busy.value) return
   busy.value = true
   try {
-    const run = createNewRun(characterCreation)
+    const seed = createRunSeed()
+    const map = generateMeadowsRegion(seed)
+    const run = createNewRun(characterCreation, { seed, map })
     const result = writeSave(run)
     const storedRun = result.ok ? result.save : run
     saveStatus.value = result.ok ? 'valid' : 'unavailable'
     saveMessage.value = result.ok ? '' : 'Progress cannot be saved because browser storage is unavailable.'
-    await openMenuThree(storedRun)
+    await openMenuThree(storedRun, map)
   } finally {
     busy.value = false
   }
@@ -100,7 +105,7 @@ async function continueRun() {
       saveMessage.value = 'invalid-save'
       return
     }
-    await openMenuThree(result.save)
+    await openMenuThree(result.save, result.map)
   } finally {
     busy.value = false
   }
@@ -122,7 +127,9 @@ function handleEscape(event) {
   if (event.key === 'Escape' && showNewRunConfirmation.value) cancelNewRun()
 }
 
-onErrorCaptured((error) => {
+onErrorCaptured((error, instance, info) => {
+  console.error('Map rendering failed:', error instanceof Error ? error.stack : String(error))
+  console.error('Vue error context:', info, 'Component:', instance?.$options?.name ?? 'anonymous')
   mapError.value = error instanceof Error ? error.message : String(error)
   isOpeningMap.value = false
   return false
@@ -146,6 +153,7 @@ onErrorCaptured((error) => {
       v-else-if="currentView === 'menu-three'"
       :character="selectedCharacter"
       :run="activeRun"
+      :world-map="activeWorldMap"
       @ready="finishOpeningMap"
       @save-state="persistProgress"
       @main-menu="returnToMainMenu"

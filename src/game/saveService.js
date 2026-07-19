@@ -9,9 +9,10 @@ import { createInitialWorldEventRuntime, normalizeWorldEventRuntime } from '../w
 import { createDialogueRuntime } from '../dialogue/dialogueModels.js'
 import { createQuestRuntime } from '../quests/questModels.js'
 import { createNpcScheduleRuntime } from '../npcSchedules/npcScheduleModels.js'
+import { resolvePlayerPosition } from '../world/worldSession.js'
 
 export const SAVE_KEY = 'super-mega-giera.current-run'
-export const SAVE_VERSION = 8
+export const SAVE_VERSION = 9
 
 const LEGACY_HOUR_MIGRATION = Object.freeze({ 6: 6, 10: 9, 14: 15, 18: 18, 22: 21, 2: 3 })
 
@@ -20,6 +21,10 @@ export function migrateSave(value) {
   const legacyStrengthKey = String.fromCharCode(109, 105, 103, 104, 116)
   const savedCharacter = value.characterState
   let migrated = value
+  const legacySeed = migrated.seed ?? migrated.world?.seed ?? migrated.worldSeed ?? migrated.regionSeed
+  const legacyRegionId = migrated.regionId ?? migrated.world?.regionId ?? 'meadows'
+  const legacyPosition = migrated.playerPosition ?? migrated.world?.playerPosition ?? migrated.savedPlayerPosition
+  migrated = { ...migrated, seed: legacySeed, regionId: legacyRegionId, playerPosition: legacyPosition }
   if (!migrated.poiState) migrated = { ...migrated, poiState: createEmptyPoiState() }
   else migrated = { ...migrated, poiState: normalizePoiState(migrated.poiState) }
   if (!migrated.encounterState) migrated = { ...migrated, encounterState: createInitialEncounterRunState(migrated.seed, migrated.runId) }
@@ -62,19 +67,16 @@ export function validateSave(value) {
   if (!isValidPoiState(value.poiState)) return { valid: false, reason: 'invalid-poi-state' }
   if (!isValidEncounterRunState(value.encounterState)) return { valid: false, reason: 'invalid-encounter-state' }
   if (!value.worldEventRuntime?.worldState || !value.worldEventRuntime?.regionStates?.meadows) return { valid: false, reason: 'invalid-world-event-state' }
-  if (!value.playerPosition || !Number.isInteger(value.playerPosition.row) || !Number.isInteger(value.playerPosition.column)) {
-    return { valid: false, reason: 'invalid-position' }
-  }
   if (typeof value.createdAt !== 'string' || typeof value.updatedAt !== 'string') return { valid: false, reason: 'invalid-dates' }
 
   const map = generateMeadowsRegion(value.seed)
-  const { row, column } = value.playerPosition
-  if (row < 0 || row >= map.rows || column < 0 || column >= map.columns) return { valid: false, reason: 'position-outside-map' }
-  if (!map.tiles[row * map.columns + column]?.walkable) return { valid: false, reason: 'blocked-position' }
+  const resolvedPosition = resolvePlayerPosition(map, value.playerPosition)
+  if (!resolvedPosition.position) return { valid: false, reason: 'missing-map-start' }
   if (!isIntegerArray(value.discovered, map.tiles.length) || !isIntegerArray(value.visited, map.tiles.length)) {
     return { valid: false, reason: 'invalid-tile-state' }
   }
-  return { valid: true, value, map }
+  const normalizedValue = resolvedPosition.usedFallback ? { ...value, playerPosition: resolvedPosition.position } : value
+  return { valid: true, value: normalizedValue, map, usedPositionFallback: resolvedPosition.usedFallback }
 }
 
 export function readSave(storage = globalThis.localStorage) {
@@ -84,7 +86,7 @@ export function readSave(storage = globalThis.localStorage) {
     if (raw === null) return { status: 'empty' }
     const parsed = migrateSave(JSON.parse(raw))
     const validation = validateSave(parsed)
-    return validation.valid ? { status: 'valid', save: parsed } : { status: 'invalid', reason: validation.reason }
+    return validation.valid ? { status: 'valid', save: validation.value, map: validation.map, usedPositionFallback: validation.usedPositionFallback } : { status: 'invalid', reason: validation.reason }
   } catch {
     return { status: 'invalid', reason: 'unreadable' }
   }
