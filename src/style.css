@@ -1,28 +1,103 @@
 @import "tailwindcss";
 
 @theme {
-  --color-brand-50: #eef2ff;
-  --color-brand-500: #6366f1;
-  --color-brand-600: #4f46e5;
-  --color-brand-700: #4338ca;
+  --color-brand-50: #f3efe2;
+  --color-brand-500: #a79c64;
+  --color-brand-600: #7d7652;
+  --color-brand-700: #575541;
 }
+
+:root {
+  --ui-ink: #17191b;
+  --ui-wood-deep: #202225;
+  --ui-wood: #292b2e;
+  --ui-wood-raised: #3b3e40;
+  --ui-leather: #5f6060;
+  --ui-iron: #777871;
+  --ui-stone: #929087;
+  --ui-parchment: #c9c3b3;
+  --ui-parchment-light: #e6e0d2;
+  --ui-ink-on-parchment: #242526;
+  --ui-text: #e6e0d2;
+  --ui-text-muted: #b8b4aa;
+  --ui-gold: #b8aa61;
+  --ui-danger: #9b493e;
+  --ui-success: #557e5c;
+  --ui-frame-shadow: inset 0 0 0 2px var(--ui-wood-deep), 0 8px 22px rgb(0 0 0 / 55%);
+  --ui-font-display: Georgia, 'Times New Roman', serif;
+  --ui-font-body: ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Castle-stone vertical slice shared by exploration and all gameplay windows. */
+:is(.map-opening-screen,.modal-backdrop,.map-error-screen,.dialogue-backdrop,.event-backdrop,.encounter-overlay,.poi-overlay,.inventory-modal-backdrop,.merchant-backdrop,.trainer-backdrop,.backdrop,.combat-overlay,.hud-panel-backdrop,.level-up-backdrop){
+  background:rgb(15 17 19 / 88%)!important;
+}
+
+:is(.dialog,.dialogue-overlay,.event-modal,.encounter-window,.encounter-confirmation,.poi-window,.poi-confirm section,.inventory-window,.inventory-modal,.merchant-window,.trainer-screen,.log,.combat-window,.logs-window,.character-sheet,.skills-window,.dev-panel,.hud-panel,.level-up-popup){
+  border-color:var(--ui-iron)!important;
+  border-radius:.25rem!important;
+  background:var(--ui-wood)!important;
+  color:var(--ui-text)!important;
+  box-shadow:var(--ui-frame-shadow)!important;
+}
+
+:is(.dialogue-overlay header,.dialogue-overlay footer,.encounter-window>header,.poi-window>header,.merchant-header,.merchant-summary,.trainer-screen>header,.combat-header,.logs-window>header,.inventory-header,.character-sheet>header,.skills-window>header,.hud-panel>header){
+  border-color:var(--ui-leather)!important;
+  background:var(--ui-wood-deep)!important;
+}
+
+:is(.encounter-panel,.encounter-choice-details,.encounter-preparation,.poi-layout>section,.poi-action-details,.poi-outcome,.lesson-card,.inventory-list article,.inventory-context,.merchant-layout>section,.combat-actions,.combat-details>div,.logs-window article,.log article,.hud-panel__content>section,.hud-panel__content>div,.inventory-toolbar,.inventory-inspect){
+  border-color:#4e5051!important;
+  border-radius:.18rem!important;
+  background:#202225!important;
+  color:var(--ui-text)!important;
+}
+
+:is(.dialogue-overlay button,.event-modal button,.encounter-choices button,.encounter-window aside>button,.poi-window button,.inventory-window button,.inventory-modal button,.merchant-window button,.trainer-screen button,.quest-log button,.combat-window button,.logs-window button,.hud-panel button,.level-up-popup button){
+  border-color:var(--ui-iron)!important;
+  border-radius:.15rem!important;
+  background:var(--ui-wood-raised)!important;
+  color:var(--ui-text)!important;
+}
+
+:is(.dialogue-overlay button,.event-modal button,.encounter-choices button,.encounter-window aside>button,.poi-window button,.inventory-window button,.merchant-window button,.trainer-screen button,.combat-window button,.hud-panel button,.level-up-popup button):hover:not(:disabled){
+  border-color:var(--ui-gold)!important;
+  background:#505149!important;
+}
+
+:is(.dialogue-overlay input,.dialogue-overlay select,.inventory-window input,.inventory-window select,.merchant-window input,.merchant-window select,.trainer-screen input,.combat-window input,.hud-panel input,.hud-panel select){
+  border-color:var(--ui-iron)!important;
+  border-radius:.12rem!important;
+  background:#17191b!important;
+  color:var(--ui-text)!important;
+}
+
+:is(.dialogue-overlay h2,.event-modal h2,.encounter-window h2,.poi-window h2,.merchant-window h2,.trainer-screen h2,.combat-window h1,.combat-window h2,.log h2,.character-sheet h2,.skills-window h2,.hud-panel h2,.level-up-popup h2){color:var(--ui-parchment-light)!important;font-family:var(--ui-font-display)}
+:is(.encounter-window h3,.poi-window h3,.merchant-window h3,.trainer-screen h3,.inventory-window h3,.combat-window h3,.log h3,.item-tooltip h4,.item-tooltip h5){color:var(--ui-gold)!important}
+:is(.item-tooltip,.tracker){border-color:var(--ui-iron)!important;border-radius:.2rem!important;background:rgb(32 34 37 / 96%)!important;color:var(--ui-text)!important;box-shadow:var(--ui-frame-shadow)!important}
 
 @layer base {
   html {
     @apply min-h-full bg-black;
+    background: var(--ui-ink);
     scroll-behavior: smooth;
   }
 
   body {
     @apply min-h-screen min-w-80 bg-black antialiased;
+    background: var(--ui-ink);
+    color: var(--ui-text);
+    font-family: var(--ui-font-body);
   }
 
   #app {
     @apply min-h-screen bg-black;
+    background: var(--ui-ink);
   }
 
   button,
   a {
-    @apply focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-400;
+    @apply focus-visible:outline-2 focus-visible:outline-offset-4;
+    outline-color: var(--ui-gold);
   }
 }

@@ -148,7 +148,7 @@ onErrorCaptured((error, instance, info) => {
       @continue="continueRun"
       @delete-save="deleteBrokenSave"
     />
-    <MenuTwo v-else-if="currentView === 'menu-two'" @next="createRunForCharacter" />
+    <MenuTwo v-else-if="currentView === 'menu-two'" @next="createRunForCharacter" @back="returnToMainMenu" />
     <MenuThree
       v-else-if="currentView === 'menu-three'"
       :character="selectedCharacter"
@@ -166,11 +166,11 @@ onErrorCaptured((error, instance, info) => {
 
     <div v-if="showNewRunConfirmation" class="modal-backdrop" @click.self="cancelNewRun">
       <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="new-run-title">
-        <h2 id="new-run-title">Start a new run?</h2>
-        <p>Starting a new run will delete your current progress.</p>
+        <h2 id="new-run-title">Start a new game?</h2>
+        <p>Starting a new game will delete your current progress.</p>
         <div class="modal-actions">
           <button type="button" autofocus @click="cancelNewRun">Cancel</button>
-          <button type="button" class="danger" @click="confirmNewRun">Start New Run</button>
+          <button type="button" class="danger" @click="confirmNewRun">Start New Game</button>
         </div>
       </div>
     </div>
@@ -183,5 +183,5 @@ onErrorCaptured((error, instance, info) => {
 </template>
 
 <style scoped>
-.map-opening-screen,.modal-backdrop,.map-error-screen{position:fixed;z-index:100;inset:0;display:grid;place-items:center;padding:1.5rem;background:rgb(2 6 23 / 96%);color:#f8fafc;text-align:center}.dialog{width:min(36rem,100%);padding:2.5rem 2rem;border:2px solid #a5b4fc;border-radius:1rem;background:#0f172a;box-shadow:0 25px 60px #000}.dialog p{margin-top:1rem;color:#cbd5e1}.dialog h2{font-size:2rem;font-weight:900}.loading{height:.9rem;margin-top:2rem;overflow:hidden;border:1px solid #64748b;border-radius:999px;background:#020617}.loading span{display:block;width:45%;height:100%;background:linear-gradient(90deg,#4338ca,#818cf8);animation:loading 1s ease-in-out infinite alternate}.dialog strong{display:block;margin-top:.75rem;color:#c7d2fe}.modal-actions{display:flex;justify-content:center;gap:.75rem;margin-top:1.75rem}.modal-actions button,.map-error-screen button{padding:.7rem 1rem;border:1px solid #a5b4fc;border-radius:.5rem;background:#1e293b;color:#fff}.modal-actions .danger{border-color:#f87171;background:#7f1d1d}.map-error-screen p{margin-top:1rem;color:#fca5a5}.map-error-screen button{margin-top:1.5rem}@keyframes loading{to{transform:translateX(122%)}}
+.map-opening-screen,.modal-backdrop,.map-error-screen{position:fixed;z-index:100;inset:0;display:grid;place-items:center;padding:1.5rem;background:rgb(23 25 27 / 96%);color:var(--ui-text);text-align:center}.dialog{width:min(36rem,100%);padding:2.5rem 2rem;border:1px solid var(--ui-leather);border-radius:.25rem;background:var(--ui-wood);box-shadow:var(--ui-frame-shadow)}.dialog p{margin-top:1rem;color:var(--ui-text-muted)}.dialog h2{color:var(--ui-parchment-light);font:900 2rem var(--ui-font-display)}.loading{height:.7rem;margin-top:2rem;overflow:hidden;border:1px solid var(--ui-leather);border-radius:.1rem;background:var(--ui-wood-deep)}.loading span{display:block;width:45%;height:100%;background:var(--ui-gold);animation:loading 1s ease-in-out infinite alternate}.dialog strong{display:block;margin-top:.75rem;color:#d8c89f}.modal-actions{display:flex;justify-content:center;gap:.75rem;margin-top:1.75rem}.modal-actions button,.map-error-screen button{padding:.7rem 1rem;border:1px solid var(--ui-iron);border-radius:.15rem;background:var(--ui-wood-raised);color:var(--ui-text)}.modal-actions button:hover,.map-error-screen button:hover{border-color:var(--ui-gold);background:#505149}.modal-actions .danger{border-color:var(--ui-danger);background:#6b2d25}.map-error-screen p{margin-top:1rem;color:#e7a99d}.map-error-screen button{margin-top:1.5rem}@keyframes loading{to{transform:translateX(122%)}}
 </style>

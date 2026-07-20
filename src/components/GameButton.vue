@@ -28,32 +28,32 @@ defineEmits(['click'])
 .game-button {
   min-width: 13rem;
   padding: 0.9rem 2.5rem;
-  border: 3px solid #c7d2fe;
-  border-radius: 1rem;
-  background: #4338ca;
-  color: #f8fafc;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 55%);
+  border: 1px solid var(--ui-leather);
+  border-radius: 0.18rem;
+  background: var(--ui-wood-raised);
+  color: var(--ui-parchment-light);
+  box-shadow: var(--ui-frame-shadow);
   font-size: 1.5rem;
   font-weight: 800;
-  transition: transform 180ms ease, background-color 180ms ease, border-color 180ms ease;
+  font-family: var(--ui-font-display);
+  transition: background-color 140ms ease, border-color 140ms ease, transform 100ms ease;
 }
 
 .game-button:hover:not(:disabled) {
-  transform: scale(1.05);
-  border-color: #ffffff;
-  background: #4f46e5;
+  border-color: var(--ui-gold);
+  background: #505149;
 }
 
 .game-button:active:not(:disabled) {
-  transform: scale(0.96);
+  transform: translateY(1px);
 }
 
 .game-button:disabled {
   cursor: not-allowed;
-  border-color: #64748b;
-  background: #1e293b;
-  color: #cbd5e1;
-  opacity: 0.8;
+  border-color: #594b3c;
+  background: #332d27;
+  color: #817563;
+  opacity: 1;
   box-shadow: none;
 }
 </style>

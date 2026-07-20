@@ -41,9 +41,12 @@ export function getSelectedWeapon(draft) {
   return STARTING_WEAPONS.find(({ id }) => id === draft.startingWeaponId) ?? null
 }
 
+export function canContinueCharacterCreation(draft) {
+  return Boolean(draft.name.trim() && getPointsRemaining(draft.attributes) === 0 && getSelectedWeapon(draft))
+}
+
 export function canStartRun(draft) {
-  return Boolean(draft.name.trim() && getPointsRemaining(draft.attributes) === 0
-    && draft.noviceProficiencies.length === NOVICE_PROFICIENCY_LIMIT && getSelectedWeapon(draft))
+  return canContinueCharacterCreation(draft) && draft.noviceProficiencies.length === NOVICE_PROFICIENCY_LIMIT
 }
 
 export function buildCharacterCreation(draft) {
